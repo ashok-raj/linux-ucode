@@ -39,6 +39,8 @@
 #include <asm/processor.h>
 #include <asm/cmdline.h>
 #include <asm/setup.h>
+#include <asm/apic.h>
+#include <asm/mce.h>
 
 #define DRIVER_VERSION	"2.2"
 
@@ -379,13 +381,65 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 }
 
 /*
+ * Empty stub to mark NMI as handled. The real work to block further NMIs
+ * until microcode update finishes happens in hold_sibling_in_nmi()
+ */
+static int ucode_nmi_cb(unsigned int val, struct pt_regs *regs)
+{
+	return NMI_HANDLED;
+}
+
+/*
+ * Primary thread waits for all siblings to report that they have entered
+ * the NMI handler
+ */
+static int __wait_for_core_siblings(struct core_rendez *rendez)
+{
+	long timeout = NSEC_PER_MSEC;
+	atomic_t *t = &rendez->siblings_left;
+	int cpu = smp_processor_id();
+
+	while (atomic_read(t)) {
+		cpu_relax();
+		ndelay(SPINUNIT);
+		touch_nmi_watchdog();
+		timeout -= SPINUNIT;
+		if (timeout < SPINUNIT) {
+			pr_err("CPU%d timedout waiting for siblings\n", cpu);
+			atomic_inc(&rendez->failed);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void prepare_for_nmi(void)
+{
+	int cpu, first_cpu;
+	struct core_rendez *pcpu_core;
+
+	for_each_online_cpu(cpu) {
+		first_cpu = cpumask_first(topology_sibling_cpumask(cpu));
+		if (cpu != first_cpu)
+			continue;
+
+		pcpu_core = &per_cpu(core_sync, first_cpu);
+		atomic_set(&pcpu_core->siblings_left,
+			   cpumask_weight(topology_sibling_cpumask(cpu)) - 1);
+		atomic_set(&pcpu_core->core_done, 0);
+		atomic_set(&pcpu_core->failed, 0);
+	}
+}
+
+/*
  * Returns:
  * < 0 - on error
  *   0 - success (no update done or microcode was updated)
  */
 static int __reload_late(void *info)
 {
-	int cpu = smp_processor_id();
+	int first_cpu, cpu = smp_processor_id();
+	struct core_rendez *pcpu_core;
 	enum ucode_state err;
 	int ret = 0;
 
@@ -403,10 +457,32 @@ static int __reload_late(void *info)
 	 * loading attempts happen on multiple threads of an SMT core. See
 	 * below.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) == cpu)
+	first_cpu = cpumask_first(topology_sibling_cpumask(cpu));
+	pcpu_core = &per_cpu(core_sync, first_cpu);
+
+	/*
+	 * Set the CPUs that we should hold in NMI until the primary has
+	 * completed the microcode update.
+	 */
+	if (first_cpu == cpu) {
+		/*
+		 * Wait for all siblings to enter
+		 * NMI before performing the update
+		 */
+		ret = __wait_for_core_siblings(pcpu_core);
+		if (ret || atomic_read(&pcpu_core->failed)) {
+			pr_err("CPU %d core lead timeout waiting for siblings\n", cpu);
+			ret = -1;
+		}
+		pr_debug("Primary CPU %d proceeding with update\n", cpu);
 		err = microcode_ops->apply_microcode(cpu);
-	else
+		atomic_set(&pcpu_core->core_done, 1);
+	} else {
+		/* Send this CPU to the NMI handler spin loop */
+		this_cpu_write(nmi_primary_ptr, pcpu_core);
+		apic->send_IPI_self(NMI_VECTOR);
 		goto wait_for_siblings;
+	}
 
 	if (err >= UCODE_NFOUND) {
 		if (err == UCODE_ERROR)
@@ -491,6 +567,15 @@ static int microcode_reload_late(void)
 	atomic_set(&late_cpus_in,  0);
 	atomic_set(&late_cpus_out, 0);
 
+	prepare_for_nmi();
+
+	ret = register_nmi_handler(NMI_LOCAL, ucode_nmi_cb, NMI_FLAG_FIRST,
+				   "ucode_nmi");
+	if (ret) {
+		pr_err("Unable to register NMI handler\n");
+		goto done;
+	}
+
 	copy_cpu_caps(&info);
 	ret = stop_machine_cpuslocked(__reload_late, NULL, cpu_online_mask);
 	if (ret == 0)
@@ -499,6 +584,9 @@ static int microcode_reload_late(void)
 	pr_info("Reload completed, microcode revision: 0x%x -> 0x%x\n",
 		old, boot_cpu_data.microcode);
 
+	unregister_nmi_handler(NMI_LOCAL, "ucode_nmi");
+
+done:
 	return ret;
 }
 
