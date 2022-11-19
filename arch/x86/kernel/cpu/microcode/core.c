@@ -325,6 +325,8 @@ void reload_early_microcode(void)
 static struct platform_device	*microcode_pdev;
 
 #ifdef CONFIG_MICROCODE_LATE_LOADING
+static atomic_t ucode_updating;
+
 /*
  * Late loading dance. Why the heavy-handed stomp_machine effort?
  *
@@ -595,6 +597,11 @@ static void microcode_check(struct cpuinfo_x86 *orig)
 
 	pr_warn("x86/CPU: CPU features have changed after loading microcode, but might not take effect.\n");
 	pr_warn("x86/CPU: Please consider either early loading through initrd/built-in or a potential BIOS update.\n");
+}
+
+int ucode_update_in_progress(void)
+{
+	return atomic_read(&ucode_updating);
 }
 
 /*
