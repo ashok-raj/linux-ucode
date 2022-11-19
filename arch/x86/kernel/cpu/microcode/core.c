@@ -584,15 +584,16 @@ static int microcode_reload_late(void)
 	}
 
 	copy_cpu_caps(&info);
+
 	atomic_set(&ucode_updating, 1);
 	ret = stop_machine_cpuslocked(__reload_late, NULL, cpu_online_mask);
 	atomic_set(&ucode_updating, 0);
 
-	if(ret == 0)
+	if (ret == 0) {
+		pr_info("Reload completed, microcode revision: 0x%x -> 0x%x\n",
+			old, boot_cpu_data.microcode);
 		microcode_check(&info);
-
-	pr_info("Reload completed, microcode revision: 0x%x -> 0x%x\n",
-		old, boot_cpu_data.microcode);
+	}
 
 	unregister_nmi_handler(NMI_LOCAL, "ucode_nmi");
 
