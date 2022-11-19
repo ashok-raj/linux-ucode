@@ -609,7 +609,7 @@ static enum ucode_state apply_microcode_intel(int cpu)
 	 * already.
 	 */
 	rev = intel_get_microcode_revision();
-	if (rev >= mc->hdr.rev) {
+	if (rev >= mc->hdr.rev && !ucode_load_same) {
 		ret = UCODE_OK;
 		goto out;
 	}
