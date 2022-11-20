@@ -431,12 +431,28 @@ wait_for_siblings:
 	return ret;
 }
 
+static void copy_cpu_caps(struct cpuinfo_x86 *info)
+{
+	/* Reload CPUID max function as it might've changed. */
+	info->cpuid_level = cpuid_eax(0);
+
+	/*
+	 * Copy all capability leafs to pick up the synthetic ones so that
+	 * memcmp() below doesn't fail on that. The ones coming from CPUID will
+	 * get overwritten in get_cpu_cap().
+	 */
+	memcpy(info->x86_capability, &boot_cpu_data.x86_capability,
+	       sizeof(info->x86_capability));
+
+	get_cpu_cap(info);
+}
+
 /*
  * The microcode loader calls this upon late microcode load to recheck features,
  * only when microcode has been updated. Caller holds microcode_mutex and CPU
  * hotplug lock.
  */
-static void microcode_check(void)
+static void microcode_check(struct cpuinfo_x86 *orig)
 {
 	struct cpuinfo_x86 info;
 
@@ -446,15 +462,13 @@ static void microcode_check(void)
 	info.cpuid_level = cpuid_eax(0);
 
 	/*
-	 * Copy all capability leafs to pick up the synthetic ones so that
-	 * memcmp() below doesn't fail on that. The ones coming from CPUID will
-	 * get overwritten in get_cpu_cap().
-	 */
-	memcpy(&info.x86_capability, &boot_cpu_data.x86_capability, sizeof(info.x86_capability));
+	* Copy all capability leafs to pick up the synthetic ones so that
+	* memcmp() below doesn't fail on that. The ones coming from CPUID will
+	* get overwritten in get_cpu_cap().
+	*/
+	copy_cpu_caps(&info);
 
-	get_cpu_cap(&info);
-
-	if (!memcmp(&info.x86_capability, &boot_cpu_data.x86_capability,
+	if (!memcmp(&info.x86_capability, &orig->x86_capability,
 		    sizeof(info.x86_capability)))
 		return;
 
@@ -469,6 +483,7 @@ static void microcode_check(void)
 static int microcode_reload_late(void)
 {
 	int old = boot_cpu_data.microcode, ret;
+	struct cpuinfo_x86 info;
 
 	pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
 	pr_err("You should switch to early loading, if possible.\n");
@@ -476,9 +491,10 @@ static int microcode_reload_late(void)
 	atomic_set(&late_cpus_in,  0);
 	atomic_set(&late_cpus_out, 0);
 
+	copy_cpu_caps(&info);
 	ret = stop_machine_cpuslocked(__reload_late, NULL, cpu_online_mask);
 	if (ret == 0)
-		microcode_check();
+		microcode_check(&info);
 
 	pr_info("Reload completed, microcode revision: 0x%x -> 0x%x\n",
 		old, boot_cpu_data.microcode);
