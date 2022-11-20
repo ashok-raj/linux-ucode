@@ -46,6 +46,7 @@
 #include <linux/hardirq.h>
 
 #include <asm/intel-family.h>
+#include <asm/microcode.h>
 #include <asm/processor.h>
 #include <asm/traps.h>
 #include <asm/tlbflush.h>
@@ -1425,6 +1426,10 @@ noinstr void do_machine_check(struct pt_regs *regs)
 	else if (unlikely(!mca_cfg.initialized))
 		return unexpected_machine_check(regs);
 
+	instrumentation_begin();
+	if (ucode_update_in_progress())
+		pr_warn("MCE triggered while microcode update is in progress\n");
+	instrumentation_end();
 	if (mce_flags.skx_repmov_quirk && quirk_skylake_repmov())
 		goto clear;
 
