@@ -18,6 +18,7 @@
  *#define DEBUG
  */
 #define pr_fmt(fmt) "microcode: " fmt
+#define DEBUG
 
 #include <linux/earlycpio.h>
 #include <linux/firmware.h>
@@ -41,6 +42,7 @@ static const char ucode_path[] = "kernel/x86/microcode/GenuineIntel.bin";
 
 /* Current microcode patch used in early patching on the APs. */
 static struct microcode_intel *intel_ucode_patch;
+static int ucode_size;
 
 /* last level cache size per core */
 static int llc_size_per_core;
@@ -58,71 +60,29 @@ static int has_newer_microcode(void *mc, unsigned int csig, int cpf, int new_rev
 	return intel_find_matching_signature(mc, csig, cpf);
 }
 
-static struct ucode_patch *memdup_patch(void *data, unsigned int size)
-{
-	struct ucode_patch *p;
-
-	p = kzalloc(sizeof(struct ucode_patch), GFP_KERNEL);
-	if (!p)
-		return NULL;
-
-	p->data = kmemdup(data, size, GFP_KERNEL);
-	if (!p->data) {
-		kfree(p);
-		return NULL;
-	}
-
-	return p;
-}
-
 static void save_microcode_patch(struct ucode_cpu_info *uci, void *data, unsigned int size)
 {
-	struct microcode_header_intel *mc_hdr, *mc_saved_hdr;
-	struct ucode_patch *iter, *tmp, *p = NULL;
-	bool prev_found = false;
-	unsigned int sig, pf;
+	struct microcode_header_intel *mc_hdr, *p;
 
 	mc_hdr = (struct microcode_header_intel *)data;
 
-	list_for_each_entry_safe(iter, tmp, &microcode_cache, plist) {
-		mc_saved_hdr = (struct microcode_header_intel *)iter->data;
-		sig	     = mc_saved_hdr->sig;
-		pf	     = mc_saved_hdr->pf;
-
-		if (intel_find_matching_signature(data, sig, pf)) {
-			prev_found = true;
-
-			if (mc_hdr->rev <= mc_saved_hdr->rev)
-				continue;
-
-			p = memdup_patch(data, size);
-			if (!p)
-				pr_err("Error allocating buffer %p\n", data);
-			else {
-				list_replace(&iter->plist, &p->plist);
-				kfree(iter->data);
-				kfree(iter);
-			}
-		}
+	if (intel_ucode_patch && ucode_size < size) {
+		kfree(intel_ucode_patch);
+		intel_ucode_patch = NULL;
+		ucode_size = 0;
 	}
 
-	/*
-	 * There weren't any previous patches found in the list cache; save the
-	 * newly found.
-	 */
-	if (!prev_found) {
-		p = memdup_patch(data, size);
-		if (!p)
-			pr_err("Error allocating buffer for %p\n", data);
-		else
-			list_add_tail(&p->plist, &microcode_cache);
+	if (intel_ucode_patch) {
+		memcpy(intel_ucode_patch, data, size);
+		p = (struct microcode_header_intel *)intel_ucode_patch;
+	} else {
+		p = kmemdup(data, size, GFP_KERNEL);
 	}
 
-	if (!p)
+	if (!p) {
+		pr_err("Error allocating buffer for %p\n", data);
 		return;
-
-	if (!intel_find_matching_signature(p->data, uci->cpu_sig.sig, uci->cpu_sig.pf))
-		return;
+	}
 
 	/*
 	 * Save for early loading. On 32-bit, that needs to be a physical
@@ -130,9 +90,11 @@ static void save_microcode_patch(struct ucode_cpu_info *uci, void *data, unsigne
 	 * paging has been enabled.
 	 */
 	if (IS_ENABLED(CONFIG_X86_32))
-		intel_ucode_patch = (struct microcode_intel *)__pa_nodebug(p->data);
+		intel_ucode_patch = (struct microcode_intel *)__pa_nodebug(p);
 	else
-		intel_ucode_patch = p->data;
+		intel_ucode_patch = (struct microcode_intel *)p;
+
+	ucode_size = size;
 }
 
 static int is_lateload_safe(struct microcode_header_intel *mc_header)
@@ -227,12 +189,13 @@ next:
 static void show_saved_mc(void)
 {
 #ifdef DEBUG
-	int i = 0, j;
 	unsigned int sig, pf, rev, total_size, data_size, date;
+	struct extended_sigtable *ext_header;
+	struct extended_signature *ext_sig;
 	struct ucode_cpu_info uci;
-	struct ucode_patch *p;
+	int j, ext_sigcount;
 
-	if (list_empty(&microcode_cache)) {
+	if (!intel_ucode_patch) {
 		pr_debug("no microcode data saved.\n");
 		return;
 	}
@@ -244,45 +207,36 @@ static void show_saved_mc(void)
 	rev	= uci.cpu_sig.rev;
 	pr_debug("CPU: sig=0x%x, pf=0x%x, rev=0x%x\n", sig, pf, rev);
 
-	list_for_each_entry(p, &microcode_cache, plist) {
-		struct microcode_header_intel *mc_saved_header;
-		struct extended_sigtable *ext_header;
-		struct extended_signature *ext_sig;
-		int ext_sigcount;
+	sig	= intel_ucode_patch->hdr.sig;
+	pf	= intel_ucode_patch->hdr.pf;
+	rev	= intel_ucode_patch->hdr.rev;
+	date	= intel_ucode_patch->hdr.date;
 
-		mc_saved_header = (struct microcode_header_intel *)p->data;
+	total_size	= get_totalsize(intel_ucode_patch);
+	data_size	= get_datasize(intel_ucode_patch);
 
-		sig	= mc_saved_header->sig;
-		pf	= mc_saved_header->pf;
-		rev	= mc_saved_header->rev;
-		date	= mc_saved_header->date;
+	pr_debug("mc_saved: sig=0x%x, pf=0x%x, rev=0x%x, total size=0x%x, date = %04x-%02x-%02x\n",
+		 sig, pf, rev, total_size,
+		 date & 0xffff,
+		 date >> 24,
+		 (date >> 16) & 0xff);
 
-		total_size	= get_totalsize(mc_saved_header);
-		data_size	= get_datasize(mc_saved_header);
+	/* Look for ext. headers: */
+	if (total_size <= data_size + MC_HEADER_SIZE)
+		return;
 
-		pr_debug("mc_saved[%d]: sig=0x%x, pf=0x%x, rev=0x%x, total size=0x%x, date = %04x-%02x-%02x\n",
-			 i++, sig, pf, rev, total_size,
-			 date & 0xffff,
-			 date >> 24,
-			 (date >> 16) & 0xff);
+	ext_header = (void *)intel_ucode_patch + data_size + MC_HEADER_SIZE;
+	ext_sigcount = ext_header->count;
+	ext_sig = (void *)ext_header + EXT_HEADER_SIZE;
 
-		/* Look for ext. headers: */
-		if (total_size <= data_size + MC_HEADER_SIZE)
-			continue;
+	for (j = 0; j < ext_sigcount; j++) {
+		sig = ext_sig->sig;
+		pf = ext_sig->pf;
 
-		ext_header = (void *)mc_saved_header + data_size + MC_HEADER_SIZE;
-		ext_sigcount = ext_header->count;
-		ext_sig = (void *)ext_header + EXT_HEADER_SIZE;
+		pr_debug("\tExtended[%d]: sig=0x%x, pf=0x%x\n",
+			 j, sig, pf);
 
-		for (j = 0; j < ext_sigcount; j++) {
-			sig = ext_sig->sig;
-			pf = ext_sig->pf;
-
-			pr_debug("\tExtended[%d]: sig=0x%x, pf=0x%x\n",
-				 j, sig, pf);
-
-			ext_sig++;
-		}
+		ext_sig++;
 	}
 #endif
 }
@@ -525,24 +479,7 @@ void load_ucode_intel_ap(void)
 
 static struct microcode_intel *find_patch(struct ucode_cpu_info *uci)
 {
-	struct microcode_header_intel *phdr;
-	struct ucode_patch *iter, *tmp;
-
-	list_for_each_entry_safe(iter, tmp, &microcode_cache, plist) {
-
-		phdr = (struct microcode_header_intel *)iter->data;
-
-		if (phdr->rev <= uci->cpu_sig.rev)
-			continue;
-
-		if (!intel_find_matching_signature(phdr,
-						   uci->cpu_sig.sig,
-						   uci->cpu_sig.pf))
-			continue;
-
-		return iter->data;
-	}
-	return NULL;
+	return intel_ucode_patch;
 }
 
 void reload_ucode_intel(void)
