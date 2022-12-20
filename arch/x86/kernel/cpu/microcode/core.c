@@ -24,6 +24,7 @@
 #include <linux/miscdevice.h>
 #include <linux/capability.h>
 #include <linux/firmware.h>
+#include <linux/debugfs.h>
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
@@ -47,6 +48,7 @@
 
 static struct microcode_ops	*microcode_ops;
 static bool dis_ucode_ldr = true;
+bool ucode_load_same;
 
 bool initrd_gone;
 
@@ -515,10 +517,12 @@ static int __reload_late(void *info)
 		goto wait_for_siblings;
 	}
 
-	if (err >= UCODE_NFOUND) {
-		if (err == UCODE_ERROR)
+	if (ret || err >= UCODE_NFOUND) {
+		if (err == UCODE_ERROR ||
+		    (err == UCODE_NFOUND && !ucode_load_same)) {
 			pr_warn("Error reloading microcode on CPU %d\n", cpu);
-		ret = -1;
+			ret = -1;
+		}
 	}
 
 wait_for_siblings:
@@ -629,8 +633,12 @@ static ssize_t reload_store(struct device *dev,
 	}
 
 	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
-	if (tmp_ret != UCODE_NEW)
+	if (tmp_ret == UCODE_ERROR ||
+	    (tmp_ret != UCODE_NEW && !ucode_load_same))
 		goto put;
+
+	if (tmp_ret != UCODE_NEW)
+		pr_info("Force loading ucode\n");
 
 	mutex_lock(&microcode_mutex);
 	ret = microcode_reload_late();
@@ -782,6 +790,7 @@ static const struct attribute_group cpu_root_microcode_group = {
 static int __init microcode_init(void)
 {
 	struct cpuinfo_x86 *c = &boot_cpu_data;
+	static struct dentry *dentry_ucode;
 	int error;
 
 	if (dis_ucode_ldr)
@@ -816,7 +825,12 @@ static int __init microcode_init(void)
 	cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN, "x86/microcode:online",
 				  mc_cpu_online, mc_cpu_down_prep);
 
+	dentry_ucode = debugfs_create_dir("microcode", NULL);
+	debugfs_create_bool("load_same", 0644, dentry_ucode, &ucode_load_same);
+
 	pr_info("Microcode Update Driver: v%s.", DRIVER_VERSION);
+	pr_info("ucode_load_same is %s\n",
+		ucode_load_same ? "enabled" : "disabled");
 
 	return 0;
 
