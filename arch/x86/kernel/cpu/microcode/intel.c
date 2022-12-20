@@ -61,16 +61,19 @@ static int has_newer_microcode(void *mc, unsigned int csig, int cpf, int new_rev
 	return intel_find_matching_signature(mc, csig, cpf);
 }
 
-static void save_microcode_patch(struct ucode_cpu_info *uci, void *data, unsigned int size)
+static void save_microcode_patch(struct microcode_intel **ucode_ptr, int *ucode_size, struct ucode_cpu_info *uci, void *data, unsigned int size)
 {
 	struct microcode_header_intel *mc_hdr, *p;
 
+	if (!(ucode_ptr && data))
+		return;
+
 	mc_hdr = (struct microcode_header_intel *)data;
 
-	if (intel_ucode_patch) {
-		kfree(intel_ucode_patch);
-		intel_ucode_patch = NULL;
-		ucode_size = 0;
+	if (*ucode_ptr) {
+		kfree(*ucode_ptr);
+		*ucode_ptr = NULL;
+		*ucode_size = 0;
 	}
 
 	p = kmemdup(data, size, GFP_KERNEL);
@@ -85,11 +88,11 @@ static void save_microcode_patch(struct ucode_cpu_info *uci, void *data, unsigne
 	 * paging has been enabled.
 	 */
 	if (IS_ENABLED(CONFIG_X86_32))
-		intel_ucode_patch = (struct microcode_intel *)__pa_nodebug(p);
+		*ucode_ptr = (struct microcode_intel *)__pa_nodebug(p);
 	else
-		intel_ucode_patch = (struct microcode_intel *)p;
+		*ucode_ptr = (struct microcode_intel *)p;
 
-	ucode_size = size;
+	*ucode_size = size;
 }
 
 static int is_lateload_safe(struct microcode_header_intel *mc_header)
@@ -164,7 +167,7 @@ scan_microcode(void *data, size_t size, struct ucode_cpu_info *uci, bool save)
 		}
 
 		if (save) {
-			save_microcode_patch(uci, data, mc_size);
+			save_microcode_patch(&intel_ucode_patch, &ucode_size, uci, data, mc_size);
 			goto next;
 		}
 
@@ -268,7 +271,7 @@ static void save_mc_for_early(struct ucode_cpu_info *uci, u8 *mc, unsigned int s
 
 	mutex_lock(&x86_cpu_microcode_mutex);
 
-	save_microcode_patch(uci, mc, size);
+	save_microcode_patch(&intel_ucode_patch, &ucode_size, uci, mc, size);
 	show_saved_mc(mc);
 
 	mutex_unlock(&x86_cpu_microcode_mutex);
