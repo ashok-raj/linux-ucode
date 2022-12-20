@@ -326,6 +326,8 @@ void reload_early_microcode(void)
 static struct platform_device	*microcode_pdev;
 
 #ifdef CONFIG_MICROCODE_LATE_LOADING
+static atomic_t ucode_updating;
+
 /*
  * Late loading dance. Why the heavy-handed stomp_machine effort?
  *
@@ -555,6 +557,11 @@ static int do_load_microcode(void)
 	return microcode_ops->apply_microcode(0);
 }
 #endif
+
+int ucode_update_in_progress(void)
+{
+	return atomic_read(&ucode_updating);
+}
 
 /*
  * Reload microcode late on all CPUs. Wait for a sec until they
