@@ -203,16 +203,17 @@ next:
 	return patch;
 }
 
-static void show_saved_mc(void)
+static void show_saved_mc(void *mc)
 {
 #ifdef DEBUG
+	struct microcode_intel *ucode = mc;
 	unsigned int sig, pf, rev, total_size, data_size, date;
 	struct extended_sigtable *ext_header;
 	struct extended_signature *ext_sig;
 	struct ucode_cpu_info uci;
 	int j, ext_sigcount;
 
-	if (!intel_ucode_patch) {
+	if (!ucode) {
 		pr_debug("no microcode data saved.\n");
 		return;
 	}
@@ -224,10 +225,10 @@ static void show_saved_mc(void)
 	rev	= uci.cpu_sig.rev;
 	pr_debug("CPU: sig=0x%x, pf=0x%x, rev=0x%x\n", sig, pf, rev);
 
-	sig	= intel_ucode_patch->hdr.sig;
-	pf	= intel_ucode_patch->hdr.pf;
-	rev	= intel_ucode_patch->hdr.rev;
-	date	= intel_ucode_patch->hdr.date;
+	sig	= ucode->hdr.sig;
+	pf	= ucode->hdr.pf;
+	rev	= ucode->hdr.rev;
+	date	= ucode->hdr.date;
 
 	total_size	= get_totalsize(intel_ucode_patch);
 	data_size	= get_datasize(intel_ucode_patch);
@@ -240,7 +241,7 @@ static void show_saved_mc(void)
 	if (total_size <= data_size + MC_HEADER_SIZE)
 		return;
 
-	ext_header = (void *)intel_ucode_patch + data_size + MC_HEADER_SIZE;
+	ext_header = (void *)ucode + data_size + MC_HEADER_SIZE;
 	ext_sigcount = ext_header->count;
 	ext_sig = (void *)ext_header + EXT_HEADER_SIZE;
 
@@ -268,7 +269,7 @@ static void save_mc_for_early(struct ucode_cpu_info *uci, u8 *mc, unsigned int s
 	mutex_lock(&x86_cpu_microcode_mutex);
 
 	save_microcode_patch(uci, mc, size);
-	show_saved_mc();
+	show_saved_mc(mc);
 
 	mutex_unlock(&x86_cpu_microcode_mutex);
 }
@@ -414,7 +415,7 @@ int __init save_microcode_in_initrd_intel(void)
 
 	scan_microcode(cp.data, cp.size, &uci, true);
 
-	show_saved_mc();
+	show_saved_mc(intel_ucode_patch);
 
 	return 0;
 }
