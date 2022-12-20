@@ -6,6 +6,36 @@
 #include <linux/earlycpio.h>
 #include <linux/initrd.h>
 
+/*
+ * Although this is a per-cpu structure, both the primary and siblings use
+ * only the primary structure to communicate.
+ * All core siblings set an indication they all reached NMI handler.
+ * Once primary has completed the microcode update, sets core_done to
+ * release all core siblings out of NMI.
+ *
+ * siblings_left - Siblings set to inform primary once they reach NMI.
+ * core_done	 - Set by primary once microcode update has completed.
+ * failed	 - Set if there is a timeout situation during
+ *		   rendezvous
+ */
+struct core_rendez {
+	atomic_t siblings_left;
+	atomic_t core_done;
+	atomic_t failed;
+};
+
+DECLARE_PER_CPU(struct core_rendez, core_sync);
+
+/*
+ * The following structure is only used by secondary.
+ * Sets the primary per_cpu variable to be found inside the NMI handler to
+ * indicate this CPU  is supposed to drop into NMI. Its consulted in the
+ * NMI handler before entering the loop waiting for primary to finish the
+ * loading process. Once loading is complete the NMI handler clears this
+ * pointer.
+ */
+DECLARE_PER_CPU(struct core_rendez *, nmi_primary_ptr);
+
 struct ucode_patch {
 	struct list_head plist;
 	void *data;		/* Intel uses only this one */
@@ -135,6 +165,12 @@ static inline void __init load_ucode_bsp(void)			{ }
 static inline void load_ucode_ap(void)				{ }
 static inline void reload_early_microcode(void)			{ }
 static inline void microcode_bsp_resume(void)			{ }
+#endif
+
+#ifdef CONFIG_MICROCODE_LATE_LOADING
+extern void hold_sibling_in_nmi(void);
+#else
+static inline void hold_sibling_in_nmi(void) { }
 #endif
 
 #endif /* _ASM_X86_MICROCODE_H */
