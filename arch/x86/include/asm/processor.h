@@ -697,6 +697,7 @@ bool xen_set_default_idle(void);
 #endif
 
 void __noreturn stop_this_cpu(void *dummy);
+void microcode_store_cpu_caps(struct cpuinfo_x86 *info);
 void microcode_check(struct cpuinfo_x86 *info);
 
 enum l1tf_mitigations {
