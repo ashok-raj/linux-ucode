@@ -469,6 +469,7 @@ static ssize_t reload_store(struct device *dev,
 	enum ucode_state tmp_ret = UCODE_OK;
 	int bsp = boot_cpu_data.cpu_index;
 	unsigned long val;
+	bool safe_late_load = false;
 	ssize_t ret = 0;
 
 	ret = kstrtoul(buf, 0, &val);
@@ -484,12 +485,16 @@ static ssize_t reload_store(struct device *dev,
 	if (ret)
 		goto put;
 
+	safe_late_load = microcode_ops->safe_late_load;
+
+	if (!safe_late_load) {
+		pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
+		pr_err("You should switch to early loading, if possible.\n");
+	}
+
 	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
 	if (tmp_ret != UCODE_NEW)
 		goto put;
-
-	pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
-	pr_err("You should switch to early loading, if possible.\n");
 
 	mutex_lock(&microcode_mutex);
 	ret = microcode_reload_late();
@@ -501,7 +506,12 @@ put:
 	if (ret == 0)
 		ret = size;
 
-	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+	/*
+	 * Only taint if its a successful load and vendor doesn't support
+	 * safe_late_load
+	 */
+	if (!(ret || safe_late_load))
+		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
 
 	return ret;
 }
