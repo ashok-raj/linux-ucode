@@ -46,6 +46,8 @@ struct ucode_patch {
 
 extern struct list_head microcode_cache;
 
+extern bool ucode_load_same;
+
 struct cpu_signature {
 	unsigned int sig;
 	unsigned int pf;
