@@ -15,6 +15,7 @@
  * This driver allows to upgrade microcode on x86 processors.
  */
 
+#define DEBUG
 #define pr_fmt(fmt) "microcode: " fmt
 
 #include <linux/platform_device.h>
