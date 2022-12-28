@@ -50,6 +50,7 @@ static struct microcode_ops	*microcode_ops;
 static bool dis_ucode_ldr = true;
 bool ucode_load_same;
 bool do_nmi;
+bool do_panic;
 
 bool initrd_gone;
 
@@ -366,7 +367,7 @@ static int check_online_cpus(void)
 static atomic_t late_cpus_in;
 static atomic_t late_cpus_out;
 
-static int __wait_for_cpus(atomic_t *t, long long timeout)
+static int __wait_for_cpus(atomic_t *t, long long timeout, char *from)
 {
 	int all_cpus = num_online_cpus();
 
@@ -374,8 +375,8 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 
 	while (atomic_read(t) < all_cpus) {
 		if (timeout < SPINUNIT) {
-			pr_err("Timeout while waiting for CPUs rendezvous, remaining: %d\n",
-				all_cpus - atomic_read(t));
+			pr_err("%s: Timeout while waiting for CPUs rendezvous, remaining: %d\n",
+				from, all_cpus - atomic_read(t));
 			return 1;
 		}
 
@@ -475,7 +476,7 @@ static int __reload_late(void *info)
 	 * Wait for all CPUs to arrive. A load will not be attempted unless all
 	 * CPUs show up.
 	 * */
-	if (__wait_for_cpus(&late_cpus_in, NSEC_PER_SEC))
+	if (__wait_for_cpus(&late_cpus_in, NSEC_PER_SEC, "START"))
 		return -1;
 
 	/*
@@ -534,8 +535,10 @@ static int __reload_late(void *info)
 	}
 
 wait_for_siblings:
-	if (__wait_for_cpus(&late_cpus_out, NSEC_PER_SEC))
-		panic("Timeout during microcode update!\n");
+	if (__wait_for_cpus(&late_cpus_out, NSEC_PER_SEC, "WAIT_SIBS")) {
+		if (do_panic)
+			panic("Timeout during microcode update!\n");
+	}
 
 	/*
 	 * At least one thread has completed update on each core.
@@ -836,11 +839,13 @@ static int __init microcode_init(void)
 	dentry_ucode = debugfs_create_dir("microcode", NULL);
 	debugfs_create_bool("load_same", 0644, dentry_ucode, &ucode_load_same);
 	debugfs_create_bool("do_nmi", 0644, dentry_ucode, &do_nmi);
+	debugfs_create_bool("do_panic", 0644, dentry_ucode, &do_panic);
 
 	pr_info("Microcode Update Driver: v%s.", DRIVER_VERSION);
 	pr_info("ucode_load_same is %s\n",
 		ucode_load_same ? "enabled" : "disabled");
 	pr_info("do_nmi is %s\n", do_nmi ? "enabled" : "disabled");
+	pr_info("do_panic is %s\n", do_panic ? "enabled" : "disabled");
 
 	return 0;
 
