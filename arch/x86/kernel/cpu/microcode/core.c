@@ -49,6 +49,7 @@
 static struct microcode_ops	*microcode_ops;
 static bool dis_ucode_ldr = true;
 bool ucode_load_same;
+bool do_nmi;
 
 bool initrd_gone;
 
@@ -430,6 +431,9 @@ static int prepare_for_update(void)
 	int ret, cpu, first_cpu;
 	struct core_rendez *pcpu_core;
 
+	if (!do_nmi)
+		return 0;
+
 	ret = register_nmi_handler(NMI_LOCAL, ucode_nmi_cb, NMI_FLAG_FIRST,
 				   "ucode_nmi");
 	if (ret) {
@@ -493,7 +497,9 @@ static int __reload_late(void *info)
 		 * Wait for all siblings to enter
 		 * NMI before performing the update
 		 */
-		ret = __wait_for_core_siblings(pcpu_core);
+		if (do_nmi)
+			ret = __wait_for_core_siblings(pcpu_core);
+
 		if (ret || atomic_read(&pcpu_core->failed)) {
 			pr_err("CPU %d core lead timeout waiting for siblings\n", cpu);
 			ret = -1;
@@ -512,8 +518,10 @@ static int __reload_late(void *info)
 		 *     indicated its complete the update.
 		 * Now send the secondary CPU to NMI handler to wait.
 		 */
-		this_cpu_write(nmi_primary_ptr, pcpu_core);
-		apic->send_IPI_self(NMI_VECTOR);
+		if (do_nmi) {
+			this_cpu_write(nmi_primary_ptr, pcpu_core);
+			apic->send_IPI_self(NMI_VECTOR);
+		}
 		goto wait_for_siblings;
 	}
 
@@ -827,10 +835,12 @@ static int __init microcode_init(void)
 
 	dentry_ucode = debugfs_create_dir("microcode", NULL);
 	debugfs_create_bool("load_same", 0644, dentry_ucode, &ucode_load_same);
+	debugfs_create_bool("do_nmi", 0644, dentry_ucode, &do_nmi);
 
 	pr_info("Microcode Update Driver: v%s.", DRIVER_VERSION);
 	pr_info("ucode_load_same is %s\n",
 		ucode_load_same ? "enabled" : "disabled");
+	pr_info("do_nmi is %s\n", do_nmi ? "enabled" : "disabled");
 
 	return 0;
 
