@@ -460,6 +460,34 @@ static int prepare_for_update(void)
 	return 0;
 }
 
+static void check_core_done(void)
+{
+	int sibs_in_nmi, primary_notd, cpu, first_cpu;
+	struct core_rendez *pcpu_core;
+
+	sibs_in_nmi = primary_notd = 0;
+	for_each_online_cpu(cpu) {
+		first_cpu = cpumask_first(topology_sibling_cpumask(cpu));
+		if (cpu != first_cpu)
+			continue;
+
+		pcpu_core = &per_cpu(core_sync, first_cpu);
+		if (atomic_read(&pcpu_core->siblings_left)) {
+			pr_err("CPU %d reporting sibling left\n", cpu);
+			sibs_in_nmi++;
+		}
+		if (!atomic_read(&pcpu_core->core_done)) {
+			pr_err("Primary thread %d WRMSR NOT_COMPLETE\n", cpu);
+			primary_notd++;
+		}
+		if (atomic_read(&pcpu_core->failed)) {
+			pr_err("CPU %d Core lead timed out waiting for siblings\n", cpu);
+		}
+	}
+	if (!sibs_in_nmi && !primary_notd)
+		pr_info("CLEAN UPDATE\n");
+}
+
 /*
  * Returns:
  * < 0 - on error
@@ -522,6 +550,14 @@ static int __reload_late(void *info)
 		if (do_nmi) {
 			this_cpu_write(nmi_primary_ptr, pcpu_core);
 			apic->send_IPI_self(NMI_VECTOR);
+			/*
+			 * Make sure the NMI is taken before we go wait for
+			 * all CPUs to arrive
+			 */
+			while (this_cpu_read(nmi_primary_ptr)) {
+				cpu_relax();
+				ndelay(1);
+			}
 		}
 		goto wait_for_siblings;
 	}
@@ -539,6 +575,13 @@ wait_for_siblings:
 		if (do_panic)
 			panic("Timeout during microcode update!\n");
 	}
+
+	/*
+	 * Check and report just in CPU0
+	 */
+	if (!cpu)
+		check_core_done();
+
 
 	/*
 	 * At least one thread has completed update on each core.
