@@ -51,6 +51,7 @@ static bool dis_ucode_ldr = true;
 bool ucode_load_same;
 bool do_nmi;
 bool do_panic;
+bool do_wrmsr = true;
 
 bool initrd_gone;
 
@@ -331,6 +332,10 @@ static struct platform_device	*microcode_pdev;
 
 #ifdef CONFIG_MICROCODE_LATE_LOADING
 static atomic_t ucode_updating;
+static atomic_t first_done;
+static int first_here = ATOMIC_INIT(0);
+cpumask_t cpus_nmi_enter;
+cpumask_t cpus_nmi_exit;
 
 /*
  * Late loading dance. Why the heavy-handed stomp_machine effort?
@@ -367,6 +372,47 @@ static int check_online_cpus(void)
 static atomic_t late_cpus_in;
 static atomic_t late_cpus_out;
 
+static void check_core_done(void)
+{
+	int sibs_in_nmi, primary_notd, cpu, first_cpu;
+	struct core_rendez *pcpu_core;
+
+	if (!atomic_cmpxchg(&first_done, 0, 1)) {
+		first_here = smp_processor_id();
+		pr_info("First CPU to check %d\n", first_here);
+	} else
+		return;
+
+	sibs_in_nmi = primary_notd = 0;
+
+	for_each_online_cpu(cpu) {
+		first_cpu = cpumask_first(topology_sibling_cpumask(cpu));
+
+		/*
+		 * All sibling stats are recorded only in primary CPU
+		 */
+		if (cpu == first_cpu)
+			continue;
+
+		pcpu_core = &per_cpu(core_sync, first_cpu);
+
+		pr_info("CPU [%d] done = %d %s NMI and %s\n", cpu,
+			atomic_read(&pcpu_core->core_done),
+			cpumask_test_cpu(cpu, &cpus_nmi_enter) ? "ENTERED" : "DID_NOT_ENTER",
+			cpumask_test_cpu(cpu, &cpus_nmi_exit) ? "EXITED" : "DID_NOT_EXIT");
+
+		if (atomic_read(&pcpu_core->siblings_left)) {
+			pr_info("CPU %d reporting sibling left\n", cpu);
+			sibs_in_nmi++;
+		}
+		if (!atomic_read(&pcpu_core->core_done)) {
+			pr_info("Primary thread %d WRMSR NOT_COMPLETE\n", cpu);
+			primary_notd++;
+		}
+	}
+	if (!sibs_in_nmi && !primary_notd)
+		pr_info("CLEAN UPDATE\n");
+}
 static int __wait_for_cpus(atomic_t *t, long long timeout, char *from)
 {
 	int all_cpus = num_online_cpus();
@@ -377,9 +423,10 @@ static int __wait_for_cpus(atomic_t *t, long long timeout, char *from)
 		if (timeout < SPINUNIT) {
 			pr_err("%s: Timeout while waiting for CPUs rendezvous, remaining: %d\n",
 				from, all_cpus - atomic_read(t));
+
+			check_core_done();
 			return 1;
 		}
-
 		ndelay(SPINUNIT);
 		timeout -= SPINUNIT;
 
@@ -411,12 +458,12 @@ static int __wait_for_core_siblings(struct core_rendez *rendez)
 		cpu_relax();
 		ndelay(SPINUNIT);
 		touch_nmi_watchdog();
-		timeout -= SPINUNIT;
-		if (timeout < SPINUNIT) {
-			pr_err("CPU%d timedout waiting for siblings\n", cpu);
-			atomic_inc(&rendez->failed);
-			return 1;
-		}
+		//timeout -= SPINUNIT;
+		//if (timeout < SPINUNIT) {
+			//pr_err("CPU%d timedout waiting for siblings\n", cpu);
+			//atomic_inc(&rendez->failed);
+			//return 1;
+		//}
 	}
 	return 0;
 }
@@ -456,36 +503,11 @@ static int prepare_for_update(void)
 
 	atomic_set(&late_cpus_in,  0);
 	atomic_set(&late_cpus_out, 0);
+	atomic_set(&first_done, 0);
+	cpumask_clear(&cpus_nmi_enter);
+	cpumask_clear(&cpus_nmi_exit);
 
 	return 0;
-}
-
-static void check_core_done(void)
-{
-	int sibs_in_nmi, primary_notd, cpu, first_cpu;
-	struct core_rendez *pcpu_core;
-
-	sibs_in_nmi = primary_notd = 0;
-	for_each_online_cpu(cpu) {
-		first_cpu = cpumask_first(topology_sibling_cpumask(cpu));
-		if (cpu != first_cpu)
-			continue;
-
-		pcpu_core = &per_cpu(core_sync, first_cpu);
-		if (atomic_read(&pcpu_core->siblings_left)) {
-			pr_err("CPU %d reporting sibling left\n", cpu);
-			sibs_in_nmi++;
-		}
-		if (!atomic_read(&pcpu_core->core_done)) {
-			pr_err("Primary thread %d WRMSR NOT_COMPLETE\n", cpu);
-			primary_notd++;
-		}
-		if (atomic_read(&pcpu_core->failed)) {
-			pr_err("CPU %d Core lead timed out waiting for siblings\n", cpu);
-		}
-	}
-	if (!sibs_in_nmi && !primary_notd)
-		pr_info("CLEAN UPDATE\n");
 }
 
 /*
@@ -534,7 +556,10 @@ static int __reload_late(void *info)
 			ret = -1;
 		}
 		pr_debug("Primary CPU %d proceeding with update\n", cpu);
-		err = microcode_ops->apply_microcode(cpu);
+
+		if (do_wrmsr)
+			err = microcode_ops->apply_microcode(cpu);
+
 		atomic_set(&pcpu_core->core_done, 1);
 	} else {
 		/*
@@ -550,14 +575,6 @@ static int __reload_late(void *info)
 		if (do_nmi) {
 			this_cpu_write(nmi_primary_ptr, pcpu_core);
 			apic->send_IPI_self(NMI_VECTOR);
-			/*
-			 * Make sure the NMI is taken before we go wait for
-			 * all CPUs to arrive
-			 */
-			while (this_cpu_read(nmi_primary_ptr)) {
-				cpu_relax();
-				ndelay(1);
-			}
 		}
 		goto wait_for_siblings;
 	}
@@ -576,13 +593,7 @@ wait_for_siblings:
 			panic("Timeout during microcode update!\n");
 	}
 
-	/*
-	 * Check and report just in CPU0
-	 */
-	if (!cpu)
-		check_core_done();
-
-
+	check_core_done();
 	/*
 	 * At least one thread has completed update on each core.
 	 * For others, simply call the update to make sure the
@@ -883,12 +894,14 @@ static int __init microcode_init(void)
 	debugfs_create_bool("load_same", 0644, dentry_ucode, &ucode_load_same);
 	debugfs_create_bool("do_nmi", 0644, dentry_ucode, &do_nmi);
 	debugfs_create_bool("do_panic", 0644, dentry_ucode, &do_panic);
+	debugfs_create_bool("do_wrmsr", 0644, dentry_ucode, &do_wrmsr);
 
 	pr_info("Microcode Update Driver: v%s.", DRIVER_VERSION);
 	pr_info("ucode_load_same is %s\n",
 		ucode_load_same ? "enabled" : "disabled");
 	pr_info("do_nmi is %s\n", do_nmi ? "enabled" : "disabled");
 	pr_info("do_panic is %s\n", do_panic ? "enabled" : "disabled");
+	pr_info("do_wrmsr is %s\n", do_wrmsr ? "enabled" : "disabled");
 
 	return 0;
 

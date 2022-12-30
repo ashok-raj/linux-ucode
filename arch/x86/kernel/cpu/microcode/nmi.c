@@ -37,10 +37,10 @@ static int __wait_for_update(atomic_t *t)
 
 	while (!arch_atomic_read(t)) {
 		cpu_relax();
-		delay(1);
-		timeout -= SPINUNIT;
-		if (timeout < SPINUNIT)
-			return 1;
+		delay(2);
+		//timeout -= SPINUNIT;
+		//if (timeout < SPINUNIT)
+			//return 1;
 	}
 	return 0;
 }
@@ -48,12 +48,14 @@ static int __wait_for_update(atomic_t *t)
 noinstr void hold_sibling_in_nmi(void)
 {
 	struct	 core_rendez *pcpu_core;
+	extern cpumask_t cpus_nmi_enter, cpus_nmi_exit;
 	int ret = 0;
 
 	pcpu_core = this_cpu_read(nmi_primary_ptr);
 	if (likely(!pcpu_core))
 		return;
 
+	cpumask_set_cpu(smp_processor_id(), &cpus_nmi_enter);
 	/*
 	 * Increment the siblings_left to inform primary thread that the
 	 * sibling has arrived and parked in the NMI handler
@@ -68,4 +70,5 @@ noinstr void hold_sibling_in_nmi(void)
 	 * Clear the nmi_trap, so future NMI's won't be affected
 	 */
 	this_cpu_write(nmi_primary_ptr, NULL);
+	cpumask_set_cpu(smp_processor_id(), &cpus_nmi_exit);
 }
