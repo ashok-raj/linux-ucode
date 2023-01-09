@@ -24,6 +24,7 @@
 #include <linux/miscdevice.h>
 #include <linux/capability.h>
 #include <linux/firmware.h>
+#include <linux/debugfs.h>
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
@@ -44,7 +45,9 @@
 #define DRIVER_VERSION	"2.2"
 
 static struct microcode_ops	*microcode_ops;
+static struct dentry 		*dentry_ucode;
 static bool dis_ucode_ldr = true;
+bool minrev = true;
 
 bool initrd_gone;
 
@@ -488,7 +491,7 @@ static ssize_t reload_store(struct device *dev,
 	if (ret)
 		goto put;
 
-	safe_late_load = microcode_ops->safe_late_load;
+	safe_late_load = (minrev ? microcode_ops->safe_late_load : false);
 
 	if (!safe_late_load) {
 		pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
@@ -683,7 +686,11 @@ static int __init microcode_init(void)
 	cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN, "x86/microcode:online",
 				  mc_cpu_online, mc_cpu_down_prep);
 
+	dentry_ucode = debugfs_create_dir("microcode", NULL);
+	debugfs_create_bool("minrev", 0644, dentry_ucode, &minrev);
+
 	pr_info("Microcode Update Driver: v%s.", DRIVER_VERSION);
+	pr_info("MINREV %s\n", minrev ? "enabled" : "disabled");
 
 	return 0;
 

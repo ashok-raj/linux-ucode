@@ -140,6 +140,15 @@ static void save_microcode_patch(struct ucode_cpu_info *uci, void *data, unsigne
 static int is_lateload_safe(struct microcode_header_intel *mc_header)
 {
 	struct ucode_cpu_info uci;
+	extern bool minrev;
+
+	/*
+	 * If minrev is bypassed via debugfs, then allow late-load.
+	 */
+	if (!minrev) {
+		pr_info("Bypassing minrev enforcement via debugfs\n");
+		return 0;
+	}
 
 	/*
 	* When late-loading, enforce that the current revision loaded on
