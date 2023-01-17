@@ -442,9 +442,6 @@ static int microcode_reload_late(void)
 	int old = boot_cpu_data.microcode, ret;
 	struct cpuinfo_x86 prev_info;
 
-	pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
-	pr_err("You should switch to early loading, if possible.\n");
-
 	atomic_set(&late_cpus_in,  0);
 	atomic_set(&late_cpus_out, 0);
 
@@ -489,6 +486,9 @@ static ssize_t reload_store(struct device *dev,
 	ret = check_online_cpus();
 	if (ret)
 		goto unlock;
+
+	pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
+	pr_err("You should switch to early loading, if possible.\n");
 
 	mutex_lock(&microcode_mutex);
 	ret = microcode_reload_late();
