@@ -19,6 +19,8 @@
  */
 #define pr_fmt(fmt) "microcode: " fmt
 
+#define DEBUG
+
 #include <linux/earlycpio.h>
 #include <linux/firmware.h>
 #include <linux/uaccess.h>
