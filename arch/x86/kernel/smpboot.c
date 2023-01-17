@@ -37,6 +37,8 @@
  *	Glauber Costa		:	i386 and x86_64 integration
  */
 
+#define DEBUG
+
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/init.h>
