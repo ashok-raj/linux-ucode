@@ -208,6 +208,55 @@ Basically there is no way to declare a new microcode update suitable
 for late-loading. This is another one of the problems that caused late
 loading to be not enabled by default.
 
+Minimum Revision ID
+~~~~~~~~~~~~~~~~~~~
+
+Minimum revision ID (minrev) is a mechanism to prevent late loading a
+microcode if a particular user visible feature is being removed.
+
+For e.g. in Intel microcode header, minrev declares the  minimum revision
+CPU should be at, before this new microcode can be late-loaded. Otherwise
+that microcode is only suitable for early loading.
+
+The kernel will enforce disabling late-loading for any microcode header
+whose minrev is zero. In the above example if patch2 is the one that
+removes a feature.
+
+patch2.hdr.minrev = 2
+
+This ensures the kernel will not load this microcode for late loading and
+only marks it suitable for early loading.
+
+In patch3 header it will declare patch3.minrev = 2. So as long as the CPU
+is at rev2 prior to loading patch3. Patch3 is eligible for late load.
+
+=======         =======         ===========     ==================
+CPU Rev		MCU Rev		MCU.min_rev	Comments
+=======         =======         ===========     ==================
+5		6		5		Late loading OK
+7		8		8		Early loading only
+8		4		4		CPU > MCU Rev
+						Decline loading
+9		8		0		Early loading only
+=======         =======         ===========     ==================
+
+The basic rule to update microcode via late loading are:
+
+- Current CPU microcode revision must be < new MCU revision
+- Current CPU microcode revision must be >= min rev specified in the
+  microcode header
+
+Early loading vs Late Loading
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For either early or late loading, the kernel will enforce the new revision
+must be greater than what is currently loaded in the CPU.
+
+The min_rev in the microcode header is only enforced for late-loading.
+Since the kernel only evaluates features after the boot, any microcode is
+suitable for early loading. But for to qualify for late-loading, version
+loaded in the CPU must be >= the specified min_rev.
+
 Builtin microcode
 =================
 
