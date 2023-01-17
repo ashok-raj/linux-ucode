@@ -170,8 +170,10 @@ static inline void microcode_bsp_resume(void)			{ }
 #endif
 
 #ifdef CONFIG_MICROCODE_LATE_LOADING
+extern void inform_ucode_mce_in_progress(void);
 extern void hold_sibling_in_nmi(void);
 #else
+static void inform_ucode_mce_in_progress(void) { };
 static inline void hold_sibling_in_nmi(void) { }
 #endif
 
