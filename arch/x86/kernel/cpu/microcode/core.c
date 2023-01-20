@@ -422,12 +422,19 @@ wait_for_siblings:
 
 	/*
 	 * At least one thread has completed update on each core.
-	 * For others, simply call the update to make sure the
-	 * per-cpu cpuinfo can be updated with right microcode
-	 * revision.
+	 * For others, collect the cpuinfo and update the
+	 * per-cpu cpuinfo with the current microcode revision.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
-		err = microcode_ops->apply_microcode(cpu);
+	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu) {
+		struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+		struct cpuinfo_x86 *c = &cpu_data(cpu);
+
+		if (err == UCODE_UPDATED) {
+			microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+			c->microcode = uci->cpu_sig.rev;
+			pr_info("CPU%d Rev = 0x%d\n", c->microcode);
+		}
+	}
 
 	return ret;
 }
