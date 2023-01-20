@@ -475,11 +475,8 @@ static ssize_t reload_store(struct device *dev,
 	ssize_t ret;
 
 	ret = kstrtoul(buf, 0, &val);
-	if (ret)
-		return ret;
-
-	if (val != 1)
-		return size;
+	if (ret || val != 1)
+		return -EINVAL;
 
 	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
 	if (tmp_ret != UCODE_NEW)
