@@ -546,6 +546,13 @@ static int collect_cpu_info(int cpu_num, struct cpu_signature *csig)
 {
 	struct cpuinfo_x86 *c = &cpu_data(cpu_num);
 	unsigned int val[2];
+	int rev;
+
+	/*
+	 * intel_get_microcode_revision() reads a per-core MSR
+	 * to read the revision (MSR_IA32_UCODE_REV).
+	 */
+	WARN_ON_ONCE(cpu_num != smp_processor_id());
 
 	memset(csig, 0, sizeof(*csig));
 
@@ -557,7 +564,9 @@ static int collect_cpu_info(int cpu_num, struct cpu_signature *csig)
 		csig->pf = 1 << ((val[1] >> 18) & 7);
 	}
 
-	csig->rev = c->microcode;
+	rev = intel_get_microcode_revision();
+	c->microcode = rev;
+	csig->rev = rev;
 
 	return 0;
 }
