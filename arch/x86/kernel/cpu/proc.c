@@ -83,6 +83,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	if (c->microcode)
 		seq_printf(m, "microcode\t: 0x%x\n", c->microcode);
 
+	seq_printf(m, "active threads\t: 0x%x\n", c->num_smt_threads);
 	if (cpu_has(c, X86_FEATURE_TSC)) {
 		unsigned int freq = arch_freq_get_on_cpu(cpu);
 

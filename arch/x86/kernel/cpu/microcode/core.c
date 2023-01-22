@@ -348,13 +348,16 @@ static atomic_t mce_occured;
 static int check_online_cpus(void)
 {
 	unsigned int cpu;
+	struct cpuinfo_x86 *this_cpu_info;
 
 	/*
 	 * Make sure all CPUs are online.  It's fine for SMT to be disabled if
 	 * all the primary threads are still online.
 	 */
 	for_each_present_cpu(cpu) {
-		if (topology_is_primary_thread(cpu) && !cpu_online(cpu)) {
+		this_cpu_info = &cpu_data(cpu);
+		if (this_cpu_info->num_smt_threads !=
+		    cpumask_weight(topology_sibling_cpumask(cpu))) {
 			pr_err("Not all CPUs online, aborting microcode update.\n");
 			return -EBUSY;
 		}

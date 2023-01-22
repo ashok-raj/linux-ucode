@@ -142,6 +142,9 @@ struct cpuinfo_x86 {
 	/*  Is SMT active on this core? */
 	bool			smt_active;
 	u32			microcode;
+	/* Number of threads discovered at boot */
+	u32			num_smt_threads;
+
 	/* Address space bits used by the cache internally */
 	u8			x86_cache_bits;
 	unsigned		initialized : 1;

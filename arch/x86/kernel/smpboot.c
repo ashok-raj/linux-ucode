@@ -1477,6 +1477,17 @@ void __init calculate_max_logical_packages(void)
 	pr_info("Max logical packages: %u\n", __max_logical_packages);
 }
 
+static void set_boot_smt_threads(void)
+{
+	struct cpuinfo_x86 *c;
+	int cpu;
+
+	for_each_online_cpu(cpu) {
+		c = &cpu_data(cpu);
+		c->num_smt_threads = cpumask_weight(topology_sibling_cpumask(cpu));
+	}
+}
+
 void __init native_smp_cpus_done(unsigned int max_cpus)
 {
 	pr_debug("Boot done\n");
@@ -1489,6 +1500,7 @@ void __init native_smp_cpus_done(unsigned int max_cpus)
 	if (cpu_feature_enabled(X86_FEATURE_HYBRID_CPU))
 		set_sched_topology(x86_hybrid_topology);
 
+	set_boot_smt_threads();
 	nmi_selftest();
 	impress_friends();
 	cache_aps_init();
