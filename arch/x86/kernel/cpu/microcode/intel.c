@@ -356,12 +356,17 @@ static inline void print_ucode(int old_rev, int new_rev, int date)
 }
 #endif
 
+static struct microcode_intel *find_patch(void)
+{
+	return intel_ucode_patch;
+}
+
 static int apply_microcode_early(struct ucode_cpu_info *uci, bool early)
 {
 	struct microcode_intel *mc;
 	u32 rev, old_rev;
 
-	mc = uci->mc;
+	mc = find_patch();
 	if (!mc)
 		return 0;
 
@@ -468,56 +473,26 @@ static struct microcode_intel *__load_ucode_intel(struct ucode_cpu_info *uci)
 	return patch;
 }
 
-void __init load_ucode_intel_bsp(void)
+void load_ucode_intel(bool bsp)
 {
 	struct microcode_intel *patch;
 	struct ucode_cpu_info uci;
 
-	pr_info("Load ucode bsp\n");
+	if (bsp)
+	pr_info("Load ucode %s\n", bsp ? "BSP" : "AP");
+
 	patch = __load_ucode_intel(&uci);
 	pr_info("%s: early loading %s patch\n", __func__, patch ? "found" : "didnt");
 
 	if (!patch)
 		return;
 
-	intel_ucode_patch = patch;
+	if (bsp)
+		intel_ucode_patch = patch;
 
 	uci.mc = patch;
 
-	apply_microcode_early(&uci, true);
-}
-
-void load_ucode_intel_ap(void)
-{
-	struct microcode_intel *patch, **iup;
-	struct ucode_cpu_info uci;
-
-	if (IS_ENABLED(CONFIG_X86_32))
-		iup = (struct microcode_intel **) __pa_nodebug(&intel_ucode_patch);
-	else
-		iup = &intel_ucode_patch;
-
-	if (!*iup) {
-		pr_info("%s: intel_ucode_patch is null\n", __func__);
-		pr_info("Load ucode AP\n");
-		patch = __load_ucode_intel(&uci);
-		if (!patch) {
-			pr_info("%s: __load_ucode_intel found nothing\n", __func__);
-			return;
-		}
-
-		*iup = patch;
-	}
-
-	pr_info("%s: 0x%lx\n", __func__, (unsigned long) patch);
-	uci.mc = *iup;
-
-	apply_microcode_early(&uci, true);
-}
-
-static struct microcode_intel *find_patch(struct ucode_cpu_info *uci)
-{
-	return intel_ucode_patch;
+	apply_microcode_early(&uci, bsp);
 }
 
 void reload_ucode_intel(void)
@@ -527,11 +502,9 @@ void reload_ucode_intel(void)
 
 	intel_cpu_collect_info(&uci);
 
-	p = find_patch(&uci);
+	p = find_patch();
 	if (!p)
 		return;
-
-	uci.mc = p;
 
 	apply_microcode_early(&uci, false);
 }
@@ -580,7 +553,7 @@ static enum ucode_state apply_microcode_intel(int cpu)
 		return UCODE_ERROR;
 
 	/* Look for a newer patch in our cache: */
-	mc = find_patch(uci);
+	mc = find_patch();
 	if (!mc) {
 		mc = uci->mc;
 		if (!mc)
