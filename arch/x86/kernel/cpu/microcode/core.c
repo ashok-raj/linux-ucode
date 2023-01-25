@@ -149,9 +149,11 @@ static bool __init check_loader_disabled_bsp(void)
 void __init load_ucode_bsp(void)
 {
 	unsigned int cpuid_1_eax;
-	bool intel = true;
 
 	if (!have_cpuid_p())
+		return;
+
+	if (check_loader_disabled_bsp())
 		return;
 
 	cpuid_1_eax = native_cpuid_eax(1);
@@ -160,25 +162,18 @@ void __init load_ucode_bsp(void)
 	case X86_VENDOR_INTEL:
 		if (x86_family(cpuid_1_eax) < 6)
 			return;
+		load_ucode_intel_bsp();
 		break;
 
 	case X86_VENDOR_AMD:
 		if (x86_family(cpuid_1_eax) < 0x10)
 			return;
-		intel = false;
+		load_ucode_amd_bsp(cpuid_1_eax);
 		break;
 
 	default:
 		return;
 	}
-
-	if (check_loader_disabled_bsp())
-		return;
-
-	if (intel)
-		load_ucode_intel_bsp();
-	else
-		load_ucode_amd_bsp(cpuid_1_eax);
 }
 
 static bool check_loader_disabled_ap(void)
