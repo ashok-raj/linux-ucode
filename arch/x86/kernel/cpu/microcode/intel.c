@@ -498,9 +498,12 @@ void load_ucode_intel_ap(void)
 		iup = &intel_ucode_patch;
 
 	if (!*iup) {
+		pr_info("%s: intel_ucode_patch is null\n", __func__);
 		patch = __load_ucode_intel(&uci);
-		if (!patch)
+		if (!patch) {
+			pr_info("%s: __load_ucode_intel found nothing\n", __func__);
 			return;
+		}
 
 		*iup = patch;
 	}
