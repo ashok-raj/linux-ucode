@@ -49,6 +49,7 @@ static struct microcode_ops	*microcode_ops;
 static struct dentry		*dentry_ucode;
 static bool dis_ucode_ldr = true;
 bool override_minrev;
+bool ucode_load_same;
 
 bool initrd_gone;
 
@@ -521,10 +522,12 @@ static int __reload_late(void *info)
 		goto wait_for_siblings;
 	}
 
-	if (err >= UCODE_NFOUND) {
-		if (err == UCODE_ERROR)
+	if (ret || err >= UCODE_NFOUND) {
+		if (err == UCODE_ERROR ||
+		    (err == UCODE_NFOUND && !ucode_load_same)) {
 			pr_warn("Error reloading microcode on CPU %d\n", cpu);
-		ret = -1;
+			ret = -1;
+		}
 	}
 
 wait_for_siblings:
@@ -638,8 +641,16 @@ static ssize_t reload_store(struct device *dev,
 		return -EINVAL;
 
 	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
-	if (tmp_ret != UCODE_NEW)
-		return (tmp_ret == UCODE_ERROR ? -EINVAL : size);
+
+	if (tmp_ret == UCODE_ERROR ||
+	    (tmp_ret != UCODE_NEW && !ucode_load_same)) {
+		ret = (tmp_ret == UCODE_ERROR ? -EINVAL : size);
+
+		return ret;
+	}
+
+	if (ucode_load_same)
+		pr_info("Force loading microcode\n");
 
 	cpus_read_lock();
 
@@ -847,9 +858,12 @@ static int __init microcode_init(void)
 
 	dentry_ucode = debugfs_create_dir("microcode", NULL);
 	debugfs_create_bool("override_minrev", 0644, dentry_ucode, &override_minrev);
+	debugfs_create_bool("load_same", 0644, dentry_ucode, &ucode_load_same);
 
 	pr_info("Microcode Update Driver: v%s.", DRIVER_VERSION);
 	pr_info("Override minrev %s\n", override_minrev ? "enabled" : "disabled");
+	pr_info("ucode_load_same is %s\n",
+		ucode_load_same ? "enabled" : "disabled");
 
 	return 0;
 
