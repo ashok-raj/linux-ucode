@@ -46,6 +46,7 @@
 #include <linux/hardirq.h>
 
 #include <asm/intel-family.h>
+#include <asm/microcode.h>
 #include <asm/processor.h>
 #include <asm/traps.h>
 #include <asm/tlbflush.h>
@@ -1414,6 +1415,8 @@ noinstr void do_machine_check(struct pt_regs *regs)
 		return winchip_machine_check(regs);
 	else if (unlikely(!mca_cfg.initialized))
 		return unexpected_machine_check(regs);
+
+	mce_in_progress();
 
 	if (mce_flags.skx_repmov_quirk && quirk_skylake_repmov())
 		goto clear;

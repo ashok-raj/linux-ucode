@@ -171,8 +171,10 @@ static inline void microcode_bsp_resume(void)			{ }
 
 #ifdef CONFIG_MICROCODE_LATE_LOADING
 extern void hold_sibling_in_nmi(void);
+extern void mce_in_progress(void);
 #else
 static inline void hold_sibling_in_nmi(void)	{ }
+static inline void mce_in_progress(void)	{ }
 #endif
 
 #endif /* _ASM_X86_MICROCODE_H */

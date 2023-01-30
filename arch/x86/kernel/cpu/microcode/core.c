@@ -328,6 +328,9 @@ void reload_early_microcode(void)
 static struct platform_device	*microcode_pdev;
 
 #ifdef CONFIG_MICROCODE_LATE_LOADING
+static atomic_t ucode_updating;
+static atomic_t mce_occured;
+
 /*
  * Late loading dance. Why the heavy-handed stomp_machine effort?
  *
@@ -568,6 +571,12 @@ static int do_load_microcode(void)
 }
 #endif
 
+void noinstr mce_in_progress(void)
+{
+	if (atomic_read(&ucode_updating))
+		arch_atomic_inc(&mce_occured);
+}
+
 /*
  * Reload microcode late on all CPUs. Wait for a sec until they
  * all gather together.
@@ -588,11 +597,20 @@ static int microcode_reload_late(void)
 	 */
 	store_cpu_caps(&prev_info);
 
+	atomic_inc(&ucode_updating);
+	atomic_set(&mce_occured, 0);
 	ret = do_load_microcode();
+	atomic_set(&ucode_updating, 0);
 
 	cleanup_after_update();
 
 done:
+	if (atomic_read(&mce_occured)) {
+		pr_warn("MCE occured while microcode update was in progress\n");
+		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+		atomic_set(&mce_occured, 0);
+	}
+
 	if (!ret) {
 		pr_info("Reload succeeded, microcode revision: 0x%x -> 0x%x\n",
 			old, boot_cpu_data.microcode);
