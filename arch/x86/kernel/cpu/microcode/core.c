@@ -385,7 +385,9 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
  */
 static int __reload_late(void *info)
 {
-	int cpu = smp_processor_id();
+	struct cpuinfo_x86 *bsp_info = &boot_cpu_data;
+	int first_cpu, cpu = smp_processor_id();
+	struct cpuinfo_x86 *this_cpu_info;
 	struct ucode_cpu_info *uci;
 	enum ucode_state err;
 	int ret = 0;
@@ -429,6 +431,11 @@ wait_for_siblings:
 		uci = ucode_cpu_info + cpu;
 		microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
 	}
+
+	this_cpu_info = &cpu_data(cpu);
+	if (this_cpu_info->microcode != bsp_info->microcode)
+		panic("Microcode Revision for CPU %d = 0x%x doesn't match BSP rev 0x%x\n",
+		      cpu, this_cpu_info->microcode, bsp_info->microcode);
 
 	return ret;
 }
