@@ -458,6 +458,27 @@ static int prepare_for_update(void)
 }
 
 /*
+ * Ensure that any CPU that might still be stuck in NMI are released from
+ * the NMI handler in hold_siblings_in_nmi().
+ * This is required since some panic() can cases can send IPI for shutdown,
+ * and those won't be delivered until the thread is out of NMI.
+ */
+static void release_siblings_from_nmi(void)
+{
+	int cpu, first_cpu;
+	struct core_rendez *pcpu_core;
+
+	for_each_online_cpu(cpu) {
+		first_cpu = cpumask_first(topology_sibling_cpumask(cpu));
+		if (cpu != first_cpu)
+			continue;
+
+		pcpu_core = &per_cpu(core_sync, first_cpu);
+		atomic_set(&pcpu_core->core_done, 1);
+	}
+}
+
+/*
  * Returns:
  * < 0 - on error
  *   0 - success (no update done or microcode was updated)
@@ -531,8 +552,10 @@ static int __reload_late(void *info)
 	}
 
 wait_for_siblings:
-	if (__wait_for_cpus(&late_cpus_out, NSEC_PER_SEC))
+	if (__wait_for_cpus(&late_cpus_out, NSEC_PER_SEC)) {
+		release_siblings_from_nmi();
 		panic("Timeout during microcode update!\n");
+	}
 
 	/*
 	 * At least one thread has completed update on each core.
@@ -545,9 +568,11 @@ wait_for_siblings:
 	}
 
 	this_cpu_info = &cpu_data(cpu);
-	if (this_cpu_info->microcode != bsp_info->microcode)
+	if (this_cpu_info->microcode != bsp_info->microcode) {
+		release_siblings_from_nmi();
 		panic("Microcode Revision for CPU %d = 0x%x doesn't match BSP rev 0x%x\n",
 		      cpu, this_cpu_info->microcode, bsp_info->microcode);
+	}
 
 	return ret;
 }
