@@ -184,6 +184,27 @@ reasons above.
 
 OS can choose a variety of methods to avoid running into this situation.
 
+NMI rendezvous during the Update
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+While there is nothing much the kernel can do to prevent an #SMI or #MCE
+from happening, to some extent the kernel can prevent any #NMI from
+happening. The sibling thread (T1) will enter the NMI handler
+hold_sibling_in_nmi() from arch/x86/kernel/nmi.c:exc_nmi()::
+
+
+
+	Primary Thread (T0)	Secondary Thread (T1)
+	__reload_late()		__reload_late()
+
+	wait_until_t1_in_nmi()	self_ipi(nmi)
+				--> hold_sibling_in_nmi();
+				      core_rendez->siblings--;
+
+	apply_microcode()
+	set primary done;
+				wait_till_primary_done();
+				return from nmi;
 
 Is the microcode suitable for late loading?
 -------------------------------------------
