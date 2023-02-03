@@ -673,8 +673,10 @@ static int collect_cpu_info_amd(int cpu, struct cpu_signature *csig)
 	 * mc_bp_resume() can call apply_microcode()
 	 */
 	p = find_patch(cpu);
-	if (p && (p->patch_id == csig->rev))
+	if (p) {
+		csig->rev = c->microcode = ((struct microcode_amd *)p->data)->hdr.patch_id;
 		uci->mc = p->data;
+	}
 
 	pr_info("CPU%d: patch_level=0x%08x\n", cpu, csig->rev);
 
