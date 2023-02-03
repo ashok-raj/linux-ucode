@@ -472,7 +472,7 @@ static ssize_t reload_store(struct device *dev,
 	enum ucode_state tmp_ret = UCODE_OK;
 	int bsp = boot_cpu_data.cpu_index;
 	unsigned long val;
-	ssize_t ret = 0;
+	ssize_t ret;
 
 	ret = kstrtoul(buf, 0, &val);
 	if (ret)
@@ -481,27 +481,28 @@ static ssize_t reload_store(struct device *dev,
 	if (val != 1)
 		return size;
 
+	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
+	if (tmp_ret != UCODE_NEW)
+		return (tmp_ret == UCODE_ERROR ? -EINVAL : size);
+
 	cpus_read_lock();
 
 	ret = check_online_cpus();
 	if (ret)
-		goto put;
-
-	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
-	if (tmp_ret != UCODE_NEW)
-		goto put;
+		goto unlock;
 
 	mutex_lock(&microcode_mutex);
 	ret = microcode_reload_late();
 	mutex_unlock(&microcode_mutex);
 
-put:
-	cpus_read_unlock();
-
-	if (ret == 0)
+	if (ret == 0) {
 		ret = size;
+		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+		pr_warn("Microcode late loading tainted the kernel\n");
+	}
 
-	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+unlock:
+	cpus_read_unlock();
 
 	return ret;
 }
