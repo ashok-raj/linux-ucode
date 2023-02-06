@@ -1354,7 +1354,7 @@ config MICROCODE_AMD
 config MICROCODE_LATE_LOADING
 	bool "Late microcode loading"
 	default y
-	depends on MICROCODE
+	depends on MICROCODE && X86_64
 	help
 	  Loading microcode late, when the system is up and executing instructions
 	  is a tricky business and should be avoided if possible. Just the sequence
