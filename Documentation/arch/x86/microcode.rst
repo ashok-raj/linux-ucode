@@ -200,7 +200,7 @@ patch level 3.
 Between patch1 and patch3, patch2 might have deprecated a software-visible
 feature.
 
-This is unacceptable if software is even potentially using that feature.
+This is unacceptable if software is potentially using that feature.
 For instance, say MSR_X is no longer available after an update,
 accessing that MSR will cause a #GP fault.
 
@@ -209,7 +209,7 @@ for late-loading. This is another one of the problems that caused late
 loading to be not enabled by default.
 
 Late loading control flags
---------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Microcode late loading requires some additional control flags that will
 help manage late loading. AMD CPUs require application of microcode on both
@@ -223,8 +223,73 @@ microcode late loading accordingly.
 | Option             |    Comments                      |
 +--------------------+----------------------------------+
 | LATE_LOAD_BOTH     |    Force Load on both HT threads |
++--------------------+----------------------------------+
 | LATE_LOAD_NMI_SAFE |    Don't send siblings to NMI    |
 +--------------------+----------------------------------+
+| LATE_LOAD_SAFE     |    Minrev enforced, late safe    |
++--------------------+----------------------------------+
+
+Declaring microcode is safe for late loading (Minimum Revision ID)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CPU vendor can declare that microcode format is now enhanced to understand and
+enforce the minimum required version before late load.
+
+Intel introduced a new field in the external header to declare the base
+minimum revision required before a new microcode is late-loaded.
+
+Intel's enhanced external header::
+
+	struct microcode_header_intel {
+		unsigned int            hdrver;
+		unsigned int            rev;
+		unsigned int            date;
+		unsigned int            sig;
+		unsigned int            cksum;
+		unsigned int            ldrver;
+		unsigned int            pf;
+		unsigned int            datasize;
+		unsigned int            totalsize;
+		unsigned int            metasize;
+		unsigned int		min_req_ver;<----
+		unsigned int		reserved3;
+	};
+
+With the introduction of the new enforcement, Intel's ``microcode_ops``
+explicitly declares support via setting::
+
+	struct microcode_ops {
+		u64 control;
+		....
+	};
+
+Vendor specific code must ensure the following are always true before a
+late loading is permitted.
+
+	- min_req_ver is not 0: Zero implies its legacy header and
+	  late-loading is blocked.
+	- current microcode revision in the CPU is >= the declared
+	  min_req_ver declared in the microcode header.
+
+
++---------+---------------+-----------------+----------------------+
+| CPU Rev |  MCU Rev      | MCU.min_rev	    |   Comments           |
++---------+---------------+-----------------+----------------------+
+| 5	  |	6	  |	5	    |	Late loading OK    |
++---------+---------------+-----------------+----------------------+
+| 7       |	8	  |	8	    |	Early loading only |
++---------+---------------+-----------------+----------------------+
+| 8       |	4	  |	4	    |	CPU > MCU Rev      |
+|	  |	          |	            |	Decline loading    |
++---------+---------------+-----------------+----------------------+
+| 9       |	8         |	0           |	Early loading only |
++---------+---------------+-----------------+----------------------+
+
+The basic rule to update microcode via late loading are:
+
+- Current CPU microcode revision must be < new MCU revision
+- Current CPU microcode revision must be >= min rev specified in the
+  microcode header
 
 Builtin microcode
 =================
