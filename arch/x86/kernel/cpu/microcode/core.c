@@ -394,7 +394,13 @@ static inline void update_microcode_version_cache(int cpu)
 
 static inline enum ucode_state apply_microcode(int cpu)
 {
-	return microcode_ops->apply_microcode(cpu);
+	enum ucode_state ret;
+
+	ret = microcode_ops->apply_microcode(cpu);
+
+	update_microcode_version_cache(cpu);
+
+	return ret;
 }
 
 /*
@@ -446,9 +452,6 @@ wait_for_siblings:
 	 */
 	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
 		err = apply_microcode(cpu);
-
-	/* Update the "cache" in the cpuinfo_x86 structs: */
-	update_microcode_version_cache(cpu);
 
 	return ret;
 }
