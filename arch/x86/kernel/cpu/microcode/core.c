@@ -380,13 +380,16 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 
 static inline void update_microcode_version_cache(int cpu)
 {
+	u32 rev = microcode_ops->get_microcode_revision();
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 
-	c->microcode = uci->cpu_sig.rev;
+	uci->cpu_sig.rev = rev;
+
+	c->microcode = rev;
 	/* Update boot_cpu_data's revision too, if we're on the BSP: */
 	if (c->cpu_index == boot_cpu_data.cpu_index)
-		boot_cpu_data.microcode = uci->cpu_sig.rev;
+		boot_cpu_data.microcode = rev;
 }
 
 /*

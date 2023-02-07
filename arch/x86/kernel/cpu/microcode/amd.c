@@ -696,7 +696,6 @@ static enum ucode_state apply_microcode_amd(int cpu)
 	struct microcode_amd *mc_amd;
 	struct ucode_cpu_info *uci;
 	struct ucode_patch *p;
-	enum ucode_state ret;
 	u32 rev;
 
 	BUG_ON(raw_smp_processor_id() != cpu);
@@ -714,8 +713,14 @@ static enum ucode_state apply_microcode_amd(int cpu)
 
 	/* need to apply patch? */
 	if (rev >= mc_amd->hdr.patch_id) {
-		ret = UCODE_OK;
-		goto out;
+		/*
+		 * Update internal rev if this is sibling noticing the rev
+		 * change
+		 */
+		if (uci->cpu_sig.rev < rev)
+			goto out;
+
+		return UCODE_OK;
 	}
 
 	if (__apply_microcode_amd(mc_amd)) {
@@ -724,15 +729,12 @@ static enum ucode_state apply_microcode_amd(int cpu)
 		return UCODE_ERROR;
 	}
 
-	rev = mc_amd->hdr.patch_id;
-	ret = UCODE_UPDATED;
-
-	pr_info("CPU%d: new patch_level=0x%08x\n", cpu, rev);
-
 out:
+	pr_info("CPU%d: new patch_level=0x%08x\n", cpu, mc_amd->hdr.patch_id);
+
 	uci->cpu_sig.rev = rev;
 
-	return ret;
+	return UCODE_UPDATED;
 }
 
 static size_t install_equiv_cpu_table(const u8 *buf, size_t buf_size)
