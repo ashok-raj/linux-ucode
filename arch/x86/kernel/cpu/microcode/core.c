@@ -378,6 +378,17 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 	return 0;
 }
 
+static inline void update_microcode_version_cache(int cpu)
+{
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	struct cpuinfo_x86 *c = &cpu_data(cpu);
+
+	c->microcode = uci->cpu_sig.rev;
+	/* Update boot_cpu_data's revision too, if we're on the BSP: */
+	if (c->cpu_index == boot_cpu_data.cpu_index)
+		boot_cpu_data.microcode = uci->cpu_sig.rev;
+}
+
 /*
  * Returns:
  * < 0 - on error
@@ -427,6 +438,9 @@ wait_for_siblings:
 	 */
 	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
 		err = microcode_ops->apply_microcode(cpu);
+
+	/* Update the "cache" in the cpuinfo_x86 structs: */
+	update_microcode_version_cache(cpu);
 
 	return ret;
 }
