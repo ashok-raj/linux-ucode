@@ -465,12 +465,29 @@ static int microcode_reload_late(void)
 	return ret;
 }
 
-static ssize_t reload_store(struct device *dev,
-			    struct device_attribute *attr,
+static ssize_t ucode_reload(void)
+{
+	struct device *dev = &microcode_pdev->dev;
+	int bsp = boot_cpu_data.cpu_index;
+	ssize_t ret;
+
+	if (microcode_ops->request_microcode_fw(bsp, dev) != UCODE_NEW)
+		return 0;
+
+	mutex_lock(&microcode_mutex);
+	ret = microcode_reload_late();
+	mutex_unlock(&microcode_mutex);
+
+	/* Microcode loaded successfully */
+	if (!ret)
+		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+
+	return ret;
+}
+
+static ssize_t reload_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t size)
 {
-	enum ucode_state tmp_ret = UCODE_OK;
-	int bsp = boot_cpu_data.cpu_index;
 	unsigned long val;
 	ssize_t ret;
 
@@ -481,26 +498,12 @@ static ssize_t reload_store(struct device *dev,
 	cpus_read_lock();
 
 	ret = check_online_cpus();
-	if (ret)
-		goto put;
+	if (!ret)
+		ret = ucode_reload();
 
-	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
-	if (tmp_ret != UCODE_NEW)
-		goto put;
-
-	mutex_lock(&microcode_mutex);
-	ret = microcode_reload_late();
-	mutex_unlock(&microcode_mutex);
-
-put:
 	cpus_read_unlock();
 
-	if (ret == 0)
-		ret = size;
-
-	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
-
-	return ret;
+	return ret ? ret : size;
 }
 
 static DEVICE_ATTR_WO(reload);
