@@ -423,6 +423,8 @@ static int apply_microcode_early(struct ucode_cpu_info *uci, bool early)
 	 */
 	native_wbinvd();
 
+	old_rev = rev;
+
 	/* write microcode via MSR 0x79 */
 	native_wrmsrl(MSR_IA32_UCODE_WRITE, (unsigned long)mc->bits);
 
@@ -819,6 +821,7 @@ static enum ucode_state request_microcode_fw(int cpu, struct device *device)
 }
 
 static struct microcode_ops microcode_intel_ops = {
+	.safe_late_load			  = true,
 	.request_microcode_fw             = request_microcode_fw,
 	.collect_cpu_info                 = collect_cpu_info,
 	.apply_microcode                  = apply_microcode_intel,
