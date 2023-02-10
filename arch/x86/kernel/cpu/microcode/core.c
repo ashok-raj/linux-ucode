@@ -387,6 +387,7 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 static int __reload_late(void *info)
 {
 	int cpu = smp_processor_id();
+	struct ucode_cpu_info *uci;
 	enum ucode_state err;
 	int ret = 0;
 
@@ -422,12 +423,13 @@ wait_for_siblings:
 
 	/*
 	 * At least one thread has completed update on each core.
-	 * For others, simply call the update to make sure the
-	 * per-cpu cpuinfo can be updated with right microcode
-	 * revision.
+	 * For siblings, collect the cpuinfo and update the
+	 * per-cpu cpuinfo with the current microcode revision.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
-		err = microcode_ops->apply_microcode(cpu);
+	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu) {
+		uci = ucode_cpu_info + cpu;
+		microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+	}
 
 	return ret;
 }
