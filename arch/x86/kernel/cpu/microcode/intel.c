@@ -233,13 +233,17 @@ scan_microcode(void *data, size_t size, struct ucode_cpu_info *uci, bool save)
 
 		/* We have a newer patch, save it. */
 		patch = data;
+		pr_info("Setting patch at 0x%p val = 0x%lx \n", patch, (unsigned long) patch);
 
 next:
 		data += mc_size;
 	}
 
-	if (size)
+	if (size) {
+		pr_info("size = 0x%lx returning NULL\n", size);
 		return NULL;
+	}
+	pr_info("Returning patch at 0x%p val = 0x%lxn", patch, (unsigned long) patch);
 
 	return patch;
 }
@@ -498,10 +502,12 @@ static struct microcode_intel *__load_ucode_intel(struct ucode_cpu_info *uci)
 	if (!load_builtin_intel_microcode(&cp))
 		cp = find_microcode_in_initrd(path, use_pa);
 
+	pr_info("%s: cp_data = 0x%p cp_size = 0x%lx\n", __func__, cp.data, cp.size);
 	if (!(cp.data && cp.size))
 		return NULL;
 
 	intel_cpu_collect_info(uci);
+	pr_info("Proceeding with scan_microcode\n");
 
 	patch = scan_microcode(cp.data, cp.size, uci, false);
 
@@ -518,9 +524,14 @@ void __init load_ucode_intel_bsp(void)
 	struct microcode_intel *patch;
 	struct ucode_cpu_info uci;
 
+	pr_info("Load ucode bsp\n");
 	patch = __load_ucode_intel(&uci);
+	pr_info("%s: early loading %s patch\n", __func__, patch ? "found" : "didnt");
+
 	if (!patch)
 		return;
+
+	intel_ucode_patch = patch;
 
 	uci.mc = patch;
 
@@ -539,6 +550,7 @@ void load_ucode_intel_ap(void)
 
 	if (!*iup) {
 		pr_info("%s: intel_ucode_patch is null\n", __func__);
+		pr_info("Load ucode AP\n");
 		patch = __load_ucode_intel(&uci);
 		if (!patch) {
 			pr_info("%s: __load_ucode_intel found nothing\n", __func__);
@@ -548,6 +560,7 @@ void load_ucode_intel_ap(void)
 		*iup = patch;
 	}
 
+	pr_info("%s: 0x%lx\n", __func__, (unsigned long) patch);
 	uci.mc = *iup;
 
 	apply_microcode_early(&uci, true);
