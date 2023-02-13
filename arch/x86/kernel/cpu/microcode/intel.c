@@ -475,6 +475,7 @@ int __init save_microcode_in_initrd_intel(void)
  */
 static struct microcode_intel *__load_ucode_intel(struct ucode_cpu_info *uci)
 {
+	struct microcode_intel *patch;
 	static const char *path;
 	struct cpio_data cp;
 	bool use_pa;
@@ -487,6 +488,12 @@ static struct microcode_intel *__load_ucode_intel(struct ucode_cpu_info *uci)
 		use_pa	  = false;
 	}
 
+	/*
+	 * One is saved already, just return it
+	 */
+	if (intel_ucode_patch)
+		return intel_ucode_patch;
+
 	/* try built-in microcode first */
 	if (!load_builtin_intel_microcode(&cp))
 		cp = find_microcode_in_initrd(path, use_pa);
@@ -496,7 +503,14 @@ static struct microcode_intel *__load_ucode_intel(struct ucode_cpu_info *uci)
 
 	intel_cpu_collect_info(uci);
 
-	return scan_microcode(cp.data, cp.size, uci, false);
+	patch = scan_microcode(cp.data, cp.size, uci, false);
+
+	/*
+	 * Save it, to return for AP ucode lookups
+	 */
+	intel_ucode_patch = patch;
+
+	return patch;
 }
 
 void __init load_ucode_intel_bsp(void)
