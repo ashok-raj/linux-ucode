@@ -379,6 +379,34 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 }
 
 /*
+ * Update cpuinfo_x86 after a microcode update is complete
+ * If this is a BSP, update the boot_cpu_data.
+ */
+static inline void update_microcode_version_cache(int cpu,
+		struct ucode_cpu_info *uci)
+{
+	struct cpuinfo_x86 *c = &cpu_data(cpu);
+
+	c->microcode = uci->cpu_sig.rev;
+	/* Update boot_cpu_data's revision too, if we're on the BSP: */
+	if (c->cpu_index == boot_cpu_data.cpu_index)
+		boot_cpu_data.microcode = uci->cpu_sig.rev;
+}
+
+static inline enum ucode_state apply_microcode(int cpu)
+{
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	enum ucode_state ret;
+
+	ret = microcode_ops->apply_microcode(cpu);
+
+	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+	update_microcode_version_cache(cpu, uci);
+
+	return ret;
+}
+
+/*
  * Returns:
  * < 0 - on error
  *   0 - success (no update done or microcode was updated)
@@ -386,9 +414,12 @@ static int __wait_for_cpus(atomic_t *t, long long timeout)
 static int __reload_late(void *info)
 {
 	int cpu = smp_processor_id();
+	struct ucode_cpu_info *uci;
 	enum ucode_state err;
 	bool lead_thread;
 	int ret = 0;
+
+	uci = ucode_cpu_info + cpu;
 
 	/*
 	 * Wait for all CPUs to arrive. A load will not be attempted unless all
@@ -429,8 +460,10 @@ wait_for_siblings:
 	 * per-cpu cpuinfo can be updated with right microcode
 	 * revision.
 	 */
-	if (!lead_thread)
-		err = microcode_ops->apply_microcode(cpu);
+	if (!lead_thread) {
+		microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+		update_microcode_version_cache(cpu, uci);
+	}
 
 	return ret;
 }
@@ -557,12 +590,16 @@ static void microcode_fini_cpu(int cpu)
 static enum ucode_state microcode_init_cpu(int cpu)
 {
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	enum ucode_state ret;
 
 	memset(uci, 0, sizeof(*uci));
 
 	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+	ret = microcode_ops->apply_microcode(cpu);
 
-	return microcode_ops->apply_microcode(cpu);
+	update_microcode_version_cache(cpu, uci);
+
+	return ret;
 }
 
 /**
@@ -573,9 +610,10 @@ void microcode_bsp_resume(void)
 	int cpu = smp_processor_id();
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 
-	if (uci->mc)
+	if (uci->mc) {
 		microcode_ops->apply_microcode(cpu);
-	else
+		update_microcode_version_cache(cpu, uci);
+	} else
 		reload_early_microcode(cpu);
 }
 
@@ -585,9 +623,14 @@ static struct syscore_ops mc_syscore_ops = {
 
 static int mc_cpu_starting(unsigned int cpu)
 {
-	enum ucode_state err = microcode_ops->apply_microcode(cpu);
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	enum ucode_state err;
+
+	err = microcode_ops->apply_microcode(cpu);
 
 	pr_debug("%s: CPU%d, err: %d\n", __func__, cpu, err);
+
+	update_microcode_version_cache(cpu, uci);
 
 	return err == UCODE_ERROR;
 }
