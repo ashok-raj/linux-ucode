@@ -647,7 +647,6 @@ static enum ucode_state apply_microcode_intel(int cpu)
 	ret = UCODE_UPDATED;
 
 out:
-	uci->cpu_sig.rev = rev;
 
 	return ret;
 }

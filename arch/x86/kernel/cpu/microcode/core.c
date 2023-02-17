@@ -399,6 +399,7 @@ static inline enum ucode_state apply_microcode(int cpu)
 
 	ret = microcode_ops->apply_microcode(cpu);
 
+	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
 	update_microcode_version_cache(cpu, uci);
 
 	return ret;
@@ -458,8 +459,10 @@ wait_for_siblings:
 	 * per-cpu cpuinfo can be updated with right microcode
 	 * revision.
 	 */
-	if (!lead_thread)
+	if (!lead_thread) {
+		microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
 		update_microcode_version_cache(cpu, uci);
+	}
 
 	return ret;
 }
