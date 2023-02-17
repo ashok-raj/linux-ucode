@@ -391,7 +391,14 @@ static inline void update_microcode_version_cache(int cpu,
 
 static inline enum ucode_state apply_microcode(int cpu)
 {
-	return microcode_ops->apply_microcode(cpu);
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	enum ucode_state ret;
+
+	ret = microcode_ops->apply_microcode(cpu);
+
+	update_microcode_version_cache(cpu, uci);
+
+	return ret;
 }
 
 /*
@@ -449,10 +456,7 @@ wait_for_siblings:
 	 * revision.
 	 */
 	if (!lead_thread)
-		err = apply_microcode(cpu);
-
-	/* Update the "cache" in the cpuinfo_x86 structs: */
-	update_microcode_version_cache(cpu, uci);
+		update_microcode_version_cache(cpu, uci);
 
 	return ret;
 }
@@ -586,8 +590,6 @@ static enum ucode_state microcode_init_cpu(int cpu)
 	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
 	ret = apply_microcode(cpu);
 
-	update_microcode_version_cache(cpu, uci);
-
 	return ret;
 }
 
@@ -599,10 +601,9 @@ void microcode_bsp_resume(void)
 	int cpu = smp_processor_id();
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 
-	if (uci->mc) {
+	if (uci->mc)
 		apply_microcode(cpu);
-		update_microcode_version_cache(cpu, uci);
-	} else
+	else
 		reload_early_microcode(cpu);
 }
 
@@ -612,14 +613,11 @@ static struct syscore_ops mc_syscore_ops = {
 
 static int mc_cpu_starting(unsigned int cpu)
 {
-	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 	enum ucode_state err;
 
 	err = apply_microcode(cpu);
 
 	pr_debug("%s: CPU%d, err: %d\n", __func__, cpu, err);
-
-	update_microcode_version_cache(cpu, uci);
 
 	return err == UCODE_ERROR;
 }
