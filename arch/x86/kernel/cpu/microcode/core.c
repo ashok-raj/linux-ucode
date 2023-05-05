@@ -471,8 +471,10 @@ static ssize_t ucode_reload(void)
 	int bsp = boot_cpu_data.cpu_index;
 	ssize_t ret;
 
-	if (microcode_ops->request_microcode_fw(bsp, dev) != UCODE_NEW)
-		return 0;
+	ret = microcode_ops->request_microcode_fw(bsp, dev);
+
+	if (ret != UCODE_NEW)
+		return ret == UCODE_NFOUND ? -ENOENT : -EBADF;
 
 	mutex_lock(&microcode_mutex);
 	ret = microcode_reload_late();
