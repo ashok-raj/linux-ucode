@@ -540,8 +540,10 @@ void reload_ucode_intel(void)
 
 static int collect_cpu_info(int cpu_num, struct cpu_signature *csig)
 {
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu_num;
 	struct cpuinfo_x86 *c = &cpu_data(cpu_num);
 	unsigned int val[2];
+	u32 rev;
 
 	memset(csig, 0, sizeof(*csig));
 
@@ -553,7 +555,11 @@ static int collect_cpu_info(int cpu_num, struct cpu_signature *csig)
 		csig->pf = 1 << ((val[1] >> 18) & 7);
 	}
 
-	csig->rev = c->microcode;
+	rev = intel_get_microcode_revision();
+
+	uci->cpu_sig.rev = rev;
+	c->microcode = rev;
+	csig->rev = rev;
 
 	return 0;
 }
