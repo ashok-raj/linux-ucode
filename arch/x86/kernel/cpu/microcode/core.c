@@ -298,6 +298,21 @@ struct cpio_data find_microcode_in_initrd(const char *path, bool use_pa)
 #endif
 }
 
+static void save_x86_cpuinfo(int cpu)
+{
+	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	struct cpuinfo_x86 *c = &cpu_data(cpu);
+
+	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+	c->microcode = uci->cpu_sig.rev;
+
+	/*
+	 * Update BSP values
+	 */
+	if (c->cpu_index == boot_cpu_data.cpu_index)
+		boot_cpu_data.microcode = uci->cpu_sig.rev;
+}
+
 void reload_early_microcode(unsigned int cpu)
 {
 	int vendor, family;
@@ -317,6 +332,7 @@ void reload_early_microcode(unsigned int cpu)
 	default:
 		break;
 	}
+	save_x86_cpuinfo(cpu);
 }
 
 /* fake device for request_firmware */
@@ -403,9 +419,10 @@ static int __reload_late(void *info)
 	 * loading attempts happen on multiple threads of an SMT core. See
 	 * below.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) == cpu)
+	if (cpumask_first(topology_sibling_cpumask(cpu)) == cpu) {
 		err = microcode_ops->apply_microcode(cpu);
-	else
+		save_x86_cpuinfo(cpu);
+	} else
 		goto wait_for_siblings;
 
 	if (err >= UCODE_NFOUND) {
@@ -421,12 +438,13 @@ wait_for_siblings:
 
 	/*
 	 * At least one thread has completed update on each core.
-	 * For others, simply call the update to make sure the
-	 * per-cpu cpuinfo can be updated with right microcode
-	 * revision.
+	 * For others, simply update per-cpu cpuinfo can be updated
+	 * with right microcode revision.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
+	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu) {
 		err = microcode_ops->apply_microcode(cpu);
+		save_x86_cpuinfo(cpu);
+	}
 
 	return ret;
 }
@@ -551,12 +569,15 @@ static void microcode_fini_cpu(int cpu)
 static enum ucode_state microcode_init_cpu(int cpu)
 {
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
+	enum ucode_state err;
 
 	memset(uci, 0, sizeof(*uci));
 
 	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
+	err = microcode_ops->apply_microcode(cpu);
+	save_x86_cpuinfo(cpu);
 
-	return microcode_ops->apply_microcode(cpu);
+	return err;
 }
 
 /**
@@ -567,8 +588,10 @@ void microcode_bsp_resume(void)
 	int cpu = smp_processor_id();
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 
-	if (uci->mc)
+	if (uci->mc) {
 		microcode_ops->apply_microcode(cpu);
+		save_x86_cpuinfo(cpu);
+	}
 	else
 		reload_early_microcode(cpu);
 }
@@ -581,6 +604,7 @@ static int mc_cpu_starting(unsigned int cpu)
 {
 	enum ucode_state err = microcode_ops->apply_microcode(cpu);
 
+	save_x86_cpuinfo(cpu);
 	pr_debug("%s: CPU%d, err: %d\n", __func__, cpu, err);
 
 	return err == UCODE_ERROR;
