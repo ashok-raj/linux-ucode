@@ -451,11 +451,11 @@ wait_for_siblings:
 
 	/*
 	 * At least one thread has completed update on each core.
-	 * For others, simply update per-cpu cpuinfo can be updated
-	 * with right microcode revision.
+	 * For others, simply update per-cpu cpuinfo with current
+	 * microcode revision.
 	 */
 	if (!lead_thread)
-		apply_microcode(cpu);
+		save_x86_cpuinfo(cpu);
 
 	return ret;
 }
