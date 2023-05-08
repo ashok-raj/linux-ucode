@@ -584,7 +584,6 @@ static enum ucode_state microcode_init_cpu(int cpu)
 
 	memset(uci, 0, sizeof(*uci));
 
-	microcode_ops->collect_cpu_info(cpu, &uci->cpu_sig);
 	err = apply_microcode(cpu);
 
 	return err;
