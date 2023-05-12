@@ -675,7 +675,8 @@ static int collect_cpu_info_amd(int cpu, struct cpu_signature *csig)
 	struct ucode_patch *p;
 
 	csig->sig = cpuid_eax(0x00000001);
-	csig->rev = c->microcode;
+	csig->rev = get_current_rev();
+	c->microcode = csig->rev;
 
 	/*
 	 * a patch could have been loaded early, set uci->mc so that
