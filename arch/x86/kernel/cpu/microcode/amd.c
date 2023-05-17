@@ -396,7 +396,7 @@ static u32 get_current_rev_amd(void)
 {
 	u32 rev, dummy __always_unused;
 
-	native_rdmsr(MSR_AMD64_PATCH_LEVEL, rev, dummy);
+	rdmsr(MSR_AMD64_PATCH_LEVEL, rev, dummy);
 
 	return rev;
 }
@@ -950,6 +950,7 @@ static struct microcode_ops microcode_amd_ops = {
 	.collect_cpu_info                 = collect_cpu_info_amd,
 	.apply_microcode                  = apply_microcode_amd,
 	.microcode_fini_cpu               = microcode_fini_cpu_amd,
+	.get_current_rev		  = get_current_rev_amd,
 };
 
 struct microcode_ops * __init init_amd_microcode(void)
