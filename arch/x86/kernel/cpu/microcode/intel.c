@@ -620,10 +620,6 @@ static enum ucode_state apply_microcode_intel(int cpu)
 	ret = UCODE_UPDATED;
 
 out:
-	/* Update boot_cpu_data's revision too, if we're on the BSP: */
-	if (bsp)
-		boot_cpu_data.microcode = rev;
-
 	return ret;
 }
 

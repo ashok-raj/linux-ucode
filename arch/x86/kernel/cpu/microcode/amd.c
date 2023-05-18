@@ -690,7 +690,6 @@ static int collect_cpu_info_amd(int cpu, struct cpu_signature *csig)
 
 static enum ucode_state apply_microcode_amd(int cpu)
 {
-	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	struct microcode_amd *mc_amd;
 	struct ucode_cpu_info *uci;
 	struct ucode_patch *p;
@@ -728,10 +727,6 @@ static enum ucode_state apply_microcode_amd(int cpu)
 	pr_info("CPU%d: new patch_level=0x%08x\n", cpu, rev);
 
 out:
-	/* Update boot_cpu_data's revision too, if we're on the BSP: */
-	if (c->cpu_index == boot_cpu_data.cpu_index)
-		boot_cpu_data.microcode = rev;
-
 	return ret;
 }
 
