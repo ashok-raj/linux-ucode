@@ -78,12 +78,12 @@ extern u16 __read_mostly tlb_lld_1g[NR_INFO];
  *  Members of this structure are referenced in head_32.S, so think twice
  *  before touching them. [mj]
  */
-
 struct cpuinfo_x86 {
 	__u8			x86;		/* CPU family */
 	__u8			x86_vendor;	/* CPU vendor */
 	__u8			x86_model;
 	__u8			x86_stepping;
+	__u32			x86_pf;
 #ifdef CONFIG_X86_64
 	/* Number of 4K pages in DTLB/ITLB combined(in pages): */
 	int			x86_tlbsize;

@@ -541,9 +541,9 @@ static ssize_t version_show(struct device *dev,
 static ssize_t processor_flags_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-	struct ucode_cpu_info *uci = ucode_cpu_info + dev->id;
+	struct cpuinfo_x86 *c = &cpu_data(dev->id);
 
-	return sprintf(buf, "0x%x\n", uci->cpu_sig.pf);
+	return sprintf(buf, "0x%x\n", c->x86_pf);
 }
 
 static DEVICE_ATTR_RO(version);

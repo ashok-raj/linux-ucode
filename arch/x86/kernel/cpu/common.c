@@ -1721,6 +1721,20 @@ void check_null_seg_clears_base(struct cpuinfo_x86 *c)
 	set_cpu_bug(c, X86_BUG_NULL_SEG);
 }
 
+static void get_cpu_pf(struct cpuinfo_x86 *c)
+{
+	unsigned int val[2];
+
+	if (c->x86_vendor != X86_VENDOR_INTEL)
+		return;
+
+	if ((c->x86_model >= 5) || (c->x86 > 6)) {
+		/* get processor flags from MSR 0x17 */
+		rdmsr(MSR_IA32_PLATFORM_ID, val[0], val[1]);
+		c->x86_pf = 1 << ((val[1] >> 18) & 7);
+	}
+}
+
 static void generic_identify(struct cpuinfo_x86 *c)
 {
 	c->extended_cpuid_level = 0;
@@ -1735,6 +1749,8 @@ static void generic_identify(struct cpuinfo_x86 *c)
 	cpu_detect(c);
 
 	get_cpu_vendor(c);
+
+	get_cpu_pf(c);
 
 	get_cpu_cap(c);
 

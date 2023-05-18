@@ -80,6 +80,9 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		seq_printf(m, "stepping\t: %d\n", c->x86_stepping);
 	else
 		seq_puts(m, "stepping\t: unknown\n");
+
+	seq_printf(m, "processor flags\t: 0x%x\n", c->x86_pf);
+
 	if (c->microcode)
 		seq_printf(m, "microcode\t: 0x%x\n", c->microcode);
 
