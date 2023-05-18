@@ -728,9 +728,6 @@ static enum ucode_state apply_microcode_amd(int cpu)
 	pr_info("CPU%d: new patch_level=0x%08x\n", cpu, rev);
 
 out:
-	uci->cpu_sig.rev = rev;
-	c->microcode	 = rev;
-
 	/* Update boot_cpu_data's revision too, if we're on the BSP: */
 	if (c->cpu_index == boot_cpu_data.cpu_index)
 		boot_cpu_data.microcode = rev;
