@@ -135,6 +135,7 @@ void cond_wakeup_cpu0(void);
 enum cpudead_mwait {
 	CPUDEAD_MWAIT_WAIT = 0xDEADBEEF,
 	CPUDEAD_MWAIT_HALT_KEXEC,
+	CPUDEAD_MWAIT_LOOP_UCODE,
 };
 
 void smp_kick_mwait_play_dead(enum cpudead_mwait reason);

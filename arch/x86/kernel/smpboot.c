@@ -1827,20 +1827,9 @@ static inline void mwait_play_dead(void)
 		mb();
 		__mwait(eax, 0);
 
-		/*
-		 * Kexec is about to happen. Don't go back into mwait() as
-		 * the kexec kernel might overwrite text and data including
-		 * page tables. So mwait() would resume when the monitor
-		 * cache line is written to and then the CPU goes south due
-		 * to overwritten text or page tables.
-		 *
-		 * Note: This does _NOT_ protect against a stray MCE, NMI,
-		 * SMI. They will resume execution at the instruction
-		 * following the HLT instruction and run into the problem
-		 * which this is trying to prevent.
-		 */
 		switch (READ_ONCE(ti->flags)) {
 		case CPUDEAD_MWAIT_WAIT:
+			smp_store_release(&ti->syscall_work, ti->flags);
 			break;
 
 		case CPUDEAD_MWAIT_HALT_KEXEC:
@@ -1860,6 +1849,18 @@ static inline void mwait_play_dead(void)
 
 			while(1)
 				native_halt();
+
+		case CPUDEAD_MWAIT_LOOP_UCODE:
+			/*
+			 * Microcode update is about to happen, wake up
+			 * offline threads and place in simple wait loop
+			 * until the update is complete.
+			 */
+			smp_store_release(&ti->syscall_work, ti->flags);
+
+			while (READ_ONCE(ti->flags) == CPUDEAD_MWAIT_LOOP_UCODE);
+			break;
+
 		default:
 			/* Don't fall through. If its something different,
 			 * a cpu_up is in process of changing this before
@@ -1891,11 +1892,6 @@ void smp_kick_mwait_play_dead(enum cpudead_mwait reason)
 			continue;
 
 		ti = task_thread_info(tsk);
-
-		if (ti->flags != CPUDEAD_MWAIT_WAIT) {
-			pr_err("WARNING: CPU%u not in mwait_play_dead\n", cpu);
-			continue;
-		}
 
 		for (i = 0; READ_ONCE(ti->syscall_work) != reason && i < 250; i++) {
 			/* Bring it out of mwait or the ucode wait loop */
