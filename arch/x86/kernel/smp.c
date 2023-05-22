@@ -21,6 +21,7 @@
 #include <linux/interrupt.h>
 #include <linux/cpu.h>
 #include <linux/gfp.h>
+#include <linux/kexec.h>
 
 #include <asm/mtrr.h>
 #include <asm/tlbflush.h>
@@ -146,30 +147,30 @@ static int register_stop_handler(void)
 
 static void native_stop_other_cpus(int wait)
 {
-	unsigned long flags;
-	unsigned long timeout;
+	unsigned long flags, timeout;
 
 	if (reboot_force)
 		return;
-
 
 	/* did someone beat us here? */
 	if (atomic_cmpxchg(&stopping_cpu, -1, safe_smp_processor_id()) != -1)
 		return;
 
 	/*
-	 * Use an own vector here because smp_call_function
-	 * does lots of things not suitable in a panic situation.
+	 * If any of the CPUs are in offline state, place them in
+	 * native_halt(), to make sure the CPU doesn't wander around
+	 * when the new kernel overwrites the monitored address.
 	 */
+	if (kexec_in_progress)
+		smp_kick_mwait_play_dead();
 
 	/*
-	 * We start by using the REBOOT_VECTOR irq.
-	 * The irq is treated as a sync point to allow critical
-	 * regions of code on other cpus to release their spin locks
-	 * and re-enable irqs.  Jumping straight to an NMI might
-	 * accidentally cause deadlocks with further shutdown/panic
-	 * code.  By syncing, we give the cpus up to one second to
-	 * finish their work before we force them off with the NMI.
+	 * Start by using the REBOOT_VECTOR. That acts as a sync point to
+	 * allow critical regions of code on other cpus to leave their
+	 * critical regions. Jumping straight to an NMI might accidentally
+	 * cause deadlocks with further shutdown code. This gives the CPUs
+	 * up to one second to finish their work before forcing them off
+	 * with the NMI.
 	 */
 	if (num_online_cpus() > 1) {
 		apic_send_IPI_allbutself(REBOOT_VECTOR);

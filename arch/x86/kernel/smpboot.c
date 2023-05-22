@@ -53,6 +53,7 @@
 #include <linux/tboot.h>
 #include <linux/gfp.h>
 #include <linux/cpuidle.h>
+#include <linux/kexec.h>
 #include <linux/numa.h>
 #include <linux/pgtable.h>
 #include <linux/overflow.h>
@@ -1053,6 +1054,10 @@ int common_cpu_up(unsigned int cpu, struct task_struct *idle)
 	/* Just in case we booted with a single CPU. */
 	alternatives_enable_smp();
 
+	/* Mop up the mwait_play_dead() wreckage */
+	task_thread_info(idle)->flags = _TIF_NEED_FPU_LOAD;
+	task_thread_info(idle)->syscall_work = 0;
+
 	per_cpu(pcpu_hot.current_task, cpu) = idle;
 	cpu_init_stack_canary(cpu, idle);
 
@@ -1761,7 +1766,7 @@ static inline void mwait_play_dead(void)
 	unsigned int eax, ebx, ecx, edx;
 	unsigned int highest_cstate = 0;
 	unsigned int highest_subcstate = 0;
-	void *mwait_ptr;
+	struct thread_info *ti;
 	int i;
 
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD ||
@@ -1801,7 +1806,9 @@ static inline void mwait_play_dead(void)
 	 * unlikely to be touched by other processors.  The actual
 	 * content is immaterial as it is not actually modified in any way.
 	 */
-	mwait_ptr = &current_thread_info()->flags;
+	ti = current_thread_info();
+	ti->flags = 0xDEADBEEF;
+	ti->syscall_work = 0x0;
 
 	wbinvd();
 
@@ -1814,13 +1821,62 @@ static inline void mwait_play_dead(void)
 		 * case where we return around the loop.
 		 */
 		mb();
-		clflush(mwait_ptr);
+		clflush(ti);
 		mb();
-		__monitor(mwait_ptr, 0, 0);
+		__monitor(ti, 0, 0);
 		mb();
 		__mwait(eax, 0);
 
+		/*
+		 * Kexec is about to happen. Don't go back into mwait() as
+		 * the kexec kernel might overwrite text and data including
+		 * page tables. So mwait() would resume when the monitor
+		 * cache line is written to and then the CPU goes south due
+		 * to overwritten text or page tables.
+		 *
+		 * Note: This does _NOT_ protect against a stray MCE, NMI,
+		 * SMI. They will resume execution at the instruction
+		 * following the HLT instruction and run into the problem
+		 * which this is trying to prevent.
+		 */
+		if (kexec_in_progress) {
+			/* Report back */
+			smp_store_release(&ti->syscall_work, 0xBEEFDEAD);
+
+			while(1)
+				native_halt();
+		}
 		cond_wakeup_cpu0();
+	}
+}
+
+void smp_kick_mwait_play_dead(void)
+{
+	struct task_struct *tsk;
+	struct thread_info *ti;
+	unsigned long val;
+	unsigned int cpu;
+
+	/* Kick all "offline" CPUs out of mwait */
+	for_each_cpu_andnot(cpu, cpu_present_mask, cpu_online_mask) {
+		tsk = per_cpu(pcpu_hot.current_task, cpu);
+		if (!tsk)
+			continue;
+
+		ti = task_thread_info(tsk);
+
+		/* Does it sit in mwait_play_dead() ? */
+		if (ti->flags != 0xDEADBEEF)
+			continue;
+
+		for (val = 0; READ_ONCE(ti->syscall_work) != 0xBEEFDEAD && val < 250; val++) {
+			/* Bring it out of mwait */
+			ti->flags = val;
+			udelay(1);
+		}
+
+		if (ti->syscall_work != 0xBEEFDEAD)
+			pr_err("CPU%u is stuck in MWAIT\n", cpu);
 	}
 }
 
