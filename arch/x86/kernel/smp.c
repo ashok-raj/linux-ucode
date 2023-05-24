@@ -162,7 +162,7 @@ static void native_stop_other_cpus(int wait)
 	 * when the new kernel overwrites the monitored address.
 	 */
 	if (kexec_in_progress)
-		smp_kick_mwait_play_dead();
+		smp_kick_mwait_play_dead(CPUDEAD_MWAIT_HALT_KEXEC);
 
 	/*
 	 * Start by using the REBOOT_VECTOR. That acts as a sync point to

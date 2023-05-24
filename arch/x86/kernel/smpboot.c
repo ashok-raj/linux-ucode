@@ -1807,8 +1807,8 @@ static inline void mwait_play_dead(void)
 	 * content is immaterial as it is not actually modified in any way.
 	 */
 	ti = current_thread_info();
-	ti->flags = 0xDEADBEEF;
-	ti->syscall_work = 0x0;
+	ti->flags = CPUDEAD_MWAIT_WAIT;
+	ti->syscall_work = CPUDEAD_MWAIT_WAIT;
 
 	wbinvd();
 
@@ -1839,23 +1839,50 @@ static inline void mwait_play_dead(void)
 		 * following the HLT instruction and run into the problem
 		 * which this is trying to prevent.
 		 */
-		if (kexec_in_progress) {
-			/* Report back */
-			smp_store_release(&ti->syscall_work, 0xBEEFDEAD);
+		switch (READ_ONCE(ti->flags)) {
+		case CPUDEAD_MWAIT_WAIT:
+			break;
+
+		case CPUDEAD_MWAIT_HALT_KEXEC:
+			/*
+			 * Kexec is about to happen. Don't go back into mwait() as
+			 * the kexec kernel might overwrite text and data including
+			 * page tables. So mwait() would resume when the monitor
+			 * cache line is written to and then the CPU goes south due
+			 * to overwritten text or page tables.
+			 *
+			 * Note: This does _NOT_ protect against a stray MCE, NMI,
+			 * SMI. They will resume execution at the instruction
+			 * following the HLT instruction and run into the problem
+			 * which this is trying to prevent.
+			 */
+			smp_store_release(&ti->syscall_work, ti->flags);
 
 			while(1)
 				native_halt();
+		default:
+			/* Don't fall through. If its something different,
+			 * a cpu_up is in process of changing this before
+			 * kicking this out of mwait via INIT. So don't
+			 * change values any further unless it was a
+			 * specific request.
+			 */
+			continue;
 		}
+
+		/* Restore for smp_kick_mwait_play_dead() */
+		ti->flags = CPUDEAD_MWAIT_WAIT;
+		ti->syscall_work = CPUDEAD_MWAIT_WAIT;
+
 		cond_wakeup_cpu0();
 	}
 }
 
-void smp_kick_mwait_play_dead(void)
+void smp_kick_mwait_play_dead(enum cpudead_mwait reason)
 {
 	struct task_struct *tsk;
 	struct thread_info *ti;
-	unsigned long val;
-	unsigned int cpu;
+	unsigned int cpu, i;
 
 	/* Kick all "offline" CPUs out of mwait */
 	for_each_cpu_andnot(cpu, cpu_present_mask, cpu_online_mask) {
@@ -1865,18 +1892,20 @@ void smp_kick_mwait_play_dead(void)
 
 		ti = task_thread_info(tsk);
 
-		/* Does it sit in mwait_play_dead() ? */
-		if (ti->flags != 0xDEADBEEF)
+		if (ti->flags != CPUDEAD_MWAIT_WAIT) {
+			pr_err("WARNING: CPU%u not in mwait_play_dead\n", cpu);
 			continue;
+		}
 
-		for (val = 0; READ_ONCE(ti->syscall_work) != 0xBEEFDEAD && val < 250; val++) {
-			/* Bring it out of mwait */
-			ti->flags = val;
+		for (i = 0; READ_ONCE(ti->syscall_work) != reason && i < 250; i++) {
+			/* Bring it out of mwait or the ucode wait loop */
+			ti->flags = reason;
 			udelay(1);
 		}
 
-		if (ti->syscall_work != 0xBEEFDEAD)
-			pr_err("CPU%u is stuck in MWAIT\n", cpu);
+		if (ti->syscall_work != reason)
+			pr_err("CPU%u is stuck in mwait:reason::0x%x:cmd::0x%lx:rsp::0x%lx\n",
+			       cpu, reason, ti->flags, ti->syscall_work);
 	}
 }
 

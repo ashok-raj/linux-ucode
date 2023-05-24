@@ -131,7 +131,13 @@ void play_dead_common(void);
 void wbinvd_on_cpu(int cpu);
 int wbinvd_on_all_cpus(void);
 void cond_wakeup_cpu0(void);
-void smp_kick_mwait_play_dead(void);
+
+enum cpudead_mwait {
+	CPUDEAD_MWAIT_WAIT = 0xDEADBEEF,
+	CPUDEAD_MWAIT_HALT_KEXEC,
+};
+
+void smp_kick_mwait_play_dead(enum cpudead_mwait reason);
 
 void native_smp_send_reschedule(int cpu);
 void native_send_call_func_ipi(const struct cpumask *mask);
@@ -173,7 +179,7 @@ static inline struct cpumask *cpu_l2c_shared_mask(int cpu)
 }
 
 #else /* !CONFIG_SMP */
-#define smp_kick_mwait_play_dead(void) { }
+#define smp_kick_mwait_play_dead(reason) { }
 #define wbinvd_on_cpu(cpu)     wbinvd()
 static inline int wbinvd_on_all_cpus(void)
 {
