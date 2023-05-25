@@ -152,6 +152,11 @@ static void native_stop_other_cpus(int wait)
 	if (reboot_force)
 		return;
 
+
+	/* did someone beat us here? */
+	if (atomic_cmpxchg(&stopping_cpu, -1, safe_smp_processor_id()) != -1)
+		return;
+
 	/*
 	 * Use an own vector here because smp_call_function
 	 * does lots of things not suitable in a panic situation.
@@ -167,13 +172,6 @@ static void native_stop_other_cpus(int wait)
 	 * finish their work before we force them off with the NMI.
 	 */
 	if (num_online_cpus() > 1) {
-		/* did someone beat us here? */
-		if (atomic_cmpxchg(&stopping_cpu, -1, safe_smp_processor_id()) != -1)
-			return;
-
-		/* sync above data before sending IRQ */
-		wmb();
-
 		apic_send_IPI_allbutself(REBOOT_VECTOR);
 
 		/*
