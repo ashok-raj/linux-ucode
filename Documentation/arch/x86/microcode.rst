@@ -208,6 +208,28 @@ Basically there is no way to declare a new microcode update suitable
 for late-loading. This is another one of the problems that caused late
 loading to be not enabled by default.
 
+Late loading control flags
+--------------------------
+
+Microcode late loading requires some additional control flags that will
+help manage late loading. AMD CPUs require application of microcode on both
+threads of a HT capable core, while the Intel CPUs have no such
+requirement.
+
+By setting `microcode_ops.control` appropriately, late loader can redirect
+microcode late loading accordingly.
+
+Option				Comments
+==============			=============================
+LATE_LOAD_BOTH			Force Load on both HT threads
+==============			=============================
+
++--------------------+----------------------------------+
+| Option             |    Comments                      |
++--------------------+----------------------------------+
+| LATE_LOAD_BOTH     |    Force Load on both HT threads |
++--------------------+----------------------------------+
+
 Builtin microcode
 =================
 
