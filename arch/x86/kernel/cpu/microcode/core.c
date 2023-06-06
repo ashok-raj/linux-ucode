@@ -415,6 +415,7 @@ static int __reload_late(void *info)
 {
 	int cpu = smp_processor_id();
 	enum ucode_state err;
+	bool primary_thread;
 	int ret = 0;
 
 	/*
@@ -430,7 +431,9 @@ static int __reload_late(void *info)
 	 * loading attempts happen on multiple threads of an SMT core. See
 	 * below.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) == cpu)
+	primary_thread = topology_is_primary_thread(cpu);
+
+	if (primary_thread)
 		err = apply_microcode(cpu);
 	else
 		goto wait_for_siblings;
@@ -452,7 +455,7 @@ wait_for_siblings:
 	 * per-cpu cpuinfo can be updated with right microcode
 	 * revision.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu && err != UCODE_ERROR) {
+	if (!primary_thread && err != UCODE_ERROR) {
 		err = apply_microcode(cpu);
 
 		if (err != UCODE_UPDATED) {
