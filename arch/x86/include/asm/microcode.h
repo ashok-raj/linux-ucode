@@ -34,8 +34,12 @@ enum ucode_state {
 	UCODE_ERROR,
 };
 
+#define SAFE_LATE_LOAD		(0x0001)
+
+#define is_lateload_safe(ops)	((ops->flags & SAFE_LATE_LOAD) == SAFE_LATE_LOAD)
+
 struct microcode_ops {
-	bool safe_late_load;
+	u64  flags;
 	enum ucode_state (*request_microcode_fw) (int cpu, struct device *);
 
 	void (*microcode_fini_cpu) (int cpu);

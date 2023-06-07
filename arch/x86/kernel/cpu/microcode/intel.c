@@ -135,7 +135,7 @@ static void save_microcode_patch(struct ucode_cpu_info *uci, void *data, unsigne
 		intel_ucode_patch = p->data;
 }
 
-static int is_lateload_safe(struct microcode_header_intel *mc_header)
+static int is_lateload_safe_intel(struct microcode_header_intel *mc_header)
 {
 	int cur_rev = boot_cpu_data.microcode;
 
@@ -693,7 +693,7 @@ static enum ucode_state generic_load_microcode(int cpu, struct iov_iter *iter)
 		data = mc + sizeof(mc_header);
 		if (!copy_from_iter_full(data, data_size, iter) ||
 		    intel_microcode_sanity_check(mc, true, MC_HEADER_TYPE_MICROCODE) < 0 ||
-		    is_lateload_safe(&mc_header)) {
+		    is_lateload_safe_intel(&mc_header)) {
 			ret = UCODE_ERROR;
 			break;
 		}
@@ -793,7 +793,7 @@ static enum ucode_state request_microcode_fw(int cpu, struct device *device)
 }
 
 static struct microcode_ops microcode_intel_ops = {
-	.safe_late_load	        = true,
+	.flags	        	= SAFE_LATE_LOAD,
 	.request_microcode_fw   = request_microcode_fw,
 	.collect_cpu_info       = collect_cpu_info,
 	.apply_microcode        = apply_microcode_intel,

@@ -496,7 +496,7 @@ static ssize_t reload_store(struct device *dev,
 {
 	enum ucode_state tmp_ret = UCODE_OK;
 	int bsp = boot_cpu_data.cpu_index;
-	bool safe_late_load = false;
+	bool safe_late_load = is_lateload_safe(microcode_ops);
 	bool load_success = false;
 	unsigned long val;
 	ssize_t ret;
@@ -516,8 +516,6 @@ static ssize_t reload_store(struct device *dev,
 		ret = (tmp_ret == UCODE_NFOUND) ? -ENOENT : -EBADF;
 		goto unlock;
 	}
-
-	safe_late_load = microcode_ops->safe_late_load;
 
 	/*
 	 * If safe loading indication isn't present, bail out.
