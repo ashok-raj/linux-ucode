@@ -453,8 +453,12 @@ wait_for_siblings:
 	 * For others, simply update the per-cpu cpuinfo
 	 * with microcode revision.
 	 */
-	if (!lead_thread)
-		update_cpuinfo_x86(cpu);
+	if (!lead_thread) {
+		if (force_sibling_update(microcode_ops))
+			apply_microcode(cpu);
+		else
+			update_cpuinfo_x86(cpu);
+	}
 
 	return ret;
 }

@@ -35,8 +35,10 @@ enum ucode_state {
 };
 
 #define SAFE_LATE_LOAD		(0x0001)
+#define FORCE_SIBLING_LOAD	(0x0002)
 
-#define is_lateload_safe(ops)	((ops->flags & SAFE_LATE_LOAD) == SAFE_LATE_LOAD)
+#define is_lateload_safe(ops)	  ((ops->flags & SAFE_LATE_LOAD) == SAFE_LATE_LOAD)
+#define force_sibling_update(ops) ((ops->flags & FORCE_SIBLING_LOAD) == FORCE_SIBLING_LOAD)
 
 struct microcode_ops {
 	u64  flags;
