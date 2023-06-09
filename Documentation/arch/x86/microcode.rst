@@ -219,15 +219,11 @@ requirement.
 By setting `microcode_ops.control` appropriately, late loader can redirect
 microcode late loading accordingly.
 
-Option				Comments
-==============			=============================
-LATE_LOAD_BOTH			Force Load on both HT threads
-==============			=============================
-
 +--------------------+----------------------------------+
 | Option             |    Comments                      |
 +--------------------+----------------------------------+
 | LATE_LOAD_BOTH     |    Force Load on both HT threads |
+| LATE_LOAD_NMI_SAFE |    Don't send siblings to NMI    |
 +--------------------+----------------------------------+
 
 Builtin microcode
