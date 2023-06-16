@@ -33,6 +33,7 @@ enum ucode_state {
 };
 
 struct microcode_ops {
+	u32  load_on_secondary_threads	:1;
 	enum ucode_state (*request_microcode_fw) (int cpu, struct device *);
 
 	void (*microcode_fini_cpu) (int cpu);

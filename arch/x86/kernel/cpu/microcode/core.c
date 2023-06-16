@@ -549,6 +549,14 @@ static ssize_t reload_store(struct device *dev, struct device_attribute *attr,
 static DEVICE_ATTR_WO(reload);
 #endif
 
+static ssize_t load_on_secondary_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", microcode_ops->load_on_secondary_threads);
+}
+
+static DEVICE_ATTR_RO(load_on_secondary);
+
 static ssize_t version_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
@@ -665,6 +673,7 @@ static struct attribute *cpu_root_microcode_attrs[] = {
 #ifdef CONFIG_MICROCODE_LATE_LOADING
 	&dev_attr_reload.attr,
 #endif
+	&dev_attr_load_on_secondary.attr,
 	NULL
 };
 
