@@ -498,6 +498,8 @@ static ssize_t reload_store(struct device *dev,
 	if (!ret) {
 		load_success = true;
 		ret = size;
+	} else {
+		ret = -EIO;
 	}
 
 unlock:
