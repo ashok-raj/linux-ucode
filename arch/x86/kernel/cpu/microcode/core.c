@@ -489,6 +489,8 @@ static ssize_t ucode_reload(void)
 	/* Microcode loaded successfully */
 	if (!ret)
 		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+	else
+		ret = -EIO;
 
 	return ret;
 }
