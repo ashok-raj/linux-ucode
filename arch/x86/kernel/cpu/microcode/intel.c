@@ -450,17 +450,40 @@ out:
 	return ret;
 }
 
+static bool ucode_validate_minrev(struct microcode_header_intel *mc_header)
+{
+	int cur_rev = boot_cpu_data.microcode;
+
+	/*
+	 * When late-loading, ensure the header declares a minimum revision
+	 * required to perform a late-load. The previously reserved field
+	 * is 0 in older microcode blobs.
+	 */
+	if (!mc_header->min_req_ver) {
+		pr_info("Unsafe microcode update: Microcode header does not specify a required min version\n");
+		return false;
+	}
+
+	/*
+	 * Check whether the minimum revision specified in the header is either
+	 * greater or equal to the current revision.
+	 */
+	if (cur_rev < mc_header->min_req_ver) {
+		pr_info("Unsafe microcode update: Current revision 0x%x too old\n", cur_rev);
+		pr_info("Current should be at 0x%x or higher. Use early loading instead\n", mc_header->min_req_ver);
+		return false;
+	}
+	return true;
+}
+
 static enum ucode_state generic_load_microcode(int cpu, struct iov_iter *iter)
 {
 	struct ucode_cpu_info *uci = ucode_cpu_info + cpu;
 	unsigned int curr_mc_size = 0, new_mc_size = 0;
-	enum ucode_state ret = UCODE_OK;
 	int new_rev = uci->cpu_sig.rev;
 	u8 *new_mc = NULL, *mc = NULL;
+	bool new_is_safe = false;
 	unsigned int csig, cpf;
-
-	if (force_minrev)
-		return UCODE_NFOUND;
 
 	while (iov_iter_count(iter)) {
 		struct microcode_header_intel mc_header;
@@ -469,18 +492,18 @@ static enum ucode_state generic_load_microcode(int cpu, struct iov_iter *iter)
 
 		if (!copy_from_iter_full(&mc_header, sizeof(mc_header), iter)) {
 			pr_err("error! Truncated or inaccessible header in microcode data file\n");
-			break;
+			goto fail;
 		}
 
 		mc_size = get_totalsize(&mc_header);
 		if (mc_size < sizeof(mc_header)) {
 			pr_err("error! Bad data in microcode data file (totalsize too small)\n");
-			break;
+			goto fail;
 		}
 		data_size = mc_size - sizeof(mc_header);
 		if (data_size > iov_iter_count(iter)) {
 			pr_err("error! Bad data in microcode data file (truncated file?)\n");
-			break;
+			goto fail;
 		}
 
 		/* For performance reasons, reuse mc area when possible */
@@ -488,26 +511,30 @@ static enum ucode_state generic_load_microcode(int cpu, struct iov_iter *iter)
 			vfree(mc);
 			mc = vmalloc(mc_size);
 			if (!mc)
-				break;
+				goto fail;
 			curr_mc_size = mc_size;
 		}
 
 		memcpy(mc, &mc_header, sizeof(mc_header));
 		data = mc + sizeof(mc_header);
 		if (!copy_from_iter_full(data, data_size, iter) ||
-		    intel_microcode_sanity_check(mc, true, MC_HEADER_TYPE_MICROCODE) < 0) {
-			break;
-		}
+		    intel_microcode_sanity_check(mc, true, MC_HEADER_TYPE_MICROCODE) < 0)
+			goto fail;
 
 		csig = uci->cpu_sig.sig;
 		cpf = uci->cpu_sig.pf;
 		if (has_newer_microcode(mc, csig, cpf, new_rev)) {
+			bool is_safe = ucode_validate_minrev(&mc_header);
+
+			if (force_minrev && !is_safe)
+				continue;
+
 			vfree(new_mc);
 			new_rev = mc_header.rev;
 			new_mc  = mc;
 			new_mc_size = mc_size;
-			mc = NULL;	/* trigger new vmalloc */
-			ret = UCODE_NEW;
+			new_is_safe = is_safe;
+			mc = NULL;
 		}
 	}
 
@@ -532,7 +559,11 @@ static enum ucode_state generic_load_microcode(int cpu, struct iov_iter *iter)
 	vfree(mc);
 	vfree(new_mc);
 
-	return ret;
+	return new_is_safe ? UCODE_NEW_SAFE : UCODE_NEW;
+fail:
+	vfree(mc);
+	vfree(new_mc);
+	return UCODE_ERROR;
 }
 
 static bool is_blacklisted(unsigned int cpu)
