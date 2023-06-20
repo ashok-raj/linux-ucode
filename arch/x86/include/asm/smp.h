@@ -135,6 +135,7 @@ void cond_wakeup_cpu0(void);
 enum cpudead_mwait {
 	CPUDEAD_MWAIT_WAIT      = 0xDEADBEEF,
 	CPUDEAD_MWAIT_KEXEC_HLT = 0x4A17DEAD,
+	CPUDEAD_MWAIT_UCODE_LOOP = 0x55C0100B,
 };
 
 /**
@@ -150,7 +151,9 @@ enum cpudead_mwait {
  * ==========================   ============================================
  * CPUDEAD_MWAIT_WAIT           Place all offline CPUs back in mwait
  * CPUDEAD_MWAIT_KEXEC_HLT      Park all offline CPUs in native_halt()
+ * CPUDEAD_MWAIT_LOOP_UCODE     Place offline CPUs in simple wait during update
  * ==========================   ============================================
+ *
  */
 void smp_kick_mwait_play_dead(enum cpudead_mwait reason);
 

@@ -1863,6 +1863,11 @@ static inline void mwait_play_dead(void)
 				WRITE_ONCE(md->status, CPUDEAD_MWAIT_KEXEC_HLT);
 				while(1)
 					native_halt();
+			case CPUDEAD_MWAIT_UCODE_LOOP:
+				WRITE_ONCE(md->status, CPUDEAD_MWAIT_UCODE_LOOP);
+				while (READ_ONCE(md->control) == CPUDEAD_MWAIT_UCODE_LOOP)
+					;
+				break;
 			default:
 				continue;
 		}
@@ -1887,6 +1892,8 @@ void smp_kick_mwait_play_dead(enum cpudead_mwait reason)
 		md = per_cpu_ptr(&mwait_cpu_dead, cpu);
 
 		switch (reason) {
+			case CPUDEAD_MWAIT_WAIT:
+			case CPUDEAD_MWAIT_UCODE_LOOP:
 			case CPUDEAD_MWAIT_KEXEC_HLT:
 				/*
 				 * Kexec is about to happen. Don't go back into mwait() as

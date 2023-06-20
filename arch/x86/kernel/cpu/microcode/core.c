@@ -39,6 +39,7 @@
 #include <asm/processor.h>
 #include <asm/cmdline.h>
 #include <asm/setup.h>
+#include <asm/smp.h>
 
 #define DRIVER_VERSION	"2.2"
 
@@ -439,6 +440,7 @@ static int microcode_reload_late(void)
 {
 	int old = boot_cpu_data.microcode, ret;
 	struct cpuinfo_x86 prev_info;
+	bool all_cpus_online;
 
 	pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
 	pr_err("You should switch to early loading, if possible.\n");
@@ -452,7 +454,19 @@ static int microcode_reload_late(void)
 	 */
 	store_cpu_caps(&prev_info);
 
+	/*
+	 * Check if any CPUs are offline
+	 */
+	all_cpus_online = cpumask_equal(cpu_present_mask, cpu_online_mask);
+
+	if (!all_cpus_online)
+		smp_kick_mwait_play_dead(CPUDEAD_MWAIT_UCODE_LOOP);
+
 	ret = stop_machine_cpuslocked(__reload_late, NULL, cpu_online_mask);
+
+	if (!all_cpus_online)
+		smp_kick_mwait_play_dead(CPUDEAD_MWAIT_WAIT);
+
 	if (!ret) {
 		pr_info("Reload succeeded, microcode revision: 0x%x -> 0x%x\n",
 			old, boot_cpu_data.microcode);
