@@ -160,7 +160,7 @@ static void native_stop_other_cpus(int wait)
 
 	/* For kexec, ensure that offline CPUs are out of MWAIT and in HLT */
 	if (kexec_in_progress)
-		smp_kick_mwait_play_dead();
+		smp_kick_mwait_play_dead(CPUDEAD_MWAIT_KEXEC_HLT);
 
 	/*
 	 * 1) Send an IPI on the reboot vector to all other CPUs.

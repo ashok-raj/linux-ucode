@@ -107,9 +107,6 @@ struct mwait_cpu_dead {
 	unsigned int	status;
 };
 
-#define CPUDEAD_MWAIT_WAIT	0xDEADBEEF
-#define CPUDEAD_MWAIT_KEXEC_HLT	0x4A17DEAD
-
 /*
  * Cache line aligned data for mwait_play_dead(). Separate on purpose so
  * that it's unlikely to be touched by other CPUs.
@@ -1846,23 +1843,32 @@ static inline void mwait_play_dead(void)
 		mb();
 		__mwait(eax, 0);
 
-		if (READ_ONCE(md->control) == CPUDEAD_MWAIT_KEXEC_HLT) {
-			/*
-			 * Kexec is about to happen. Don't go back into mwait() as
-			 * the kexec kernel might overwrite text and data including
-			 * page tables and stack. So mwait() would resume when the
-			 * monitor cache line is written to and then the CPU goes
-			 * south due to overwritten text, page tables and stack.
-			 *
-			 * Note: This does _NOT_ protect against a stray MCE, NMI,
-			 * SMI. They will resume execution at the instruction
-			 * following the HLT instruction and run into the problem
-			 * which this is trying to prevent.
-			 */
-			WRITE_ONCE(md->status, CPUDEAD_MWAIT_KEXEC_HLT);
-			while(1)
-				native_halt();
+		switch (READ_ONCE(md->control)) {
+			case CPUDEAD_MWAIT_WAIT:
+				break;
+
+			case CPUDEAD_MWAIT_KEXEC_HLT:
+				/*
+				 * Kexec is about to happen. Don't go back into mwait() as
+				 * the kexec kernel might overwrite text and data including
+				 * page tables and stack. So mwait() would resume when the
+				 * monitor cache line is written to and then the CPU goes
+				 * south due to overwritten text, page tables and stack.
+				 *
+				 * Note: This does _NOT_ protect against a stray MCE, NMI,
+				 * SMI. They will resume execution at the instruction
+				 * following the HLT instruction and run into the problem
+				 * which this is trying to prevent.
+				 */
+				WRITE_ONCE(md->status, CPUDEAD_MWAIT_KEXEC_HLT);
+				while(1)
+					native_halt();
+			default:
+				continue;
 		}
+		/* Restore for smp_kick_mwait_play_dead() */
+		md->control = CPUDEAD_MWAIT_WAIT;
+		WRITE_ONCE(md->status, CPUDEAD_MWAIT_WAIT);
 
 		cond_wakeup_cpu0();
 	}
@@ -1872,28 +1878,36 @@ static inline void mwait_play_dead(void)
  * Kick all "offline" CPUs out of mwait on kexec(). See comment in
  * mwait_play_dead().
  */
-void smp_kick_mwait_play_dead(void)
+void smp_kick_mwait_play_dead(enum cpudead_mwait reason)
 {
-	u32 newstate = CPUDEAD_MWAIT_KEXEC_HLT;
 	struct mwait_cpu_dead *md;
 	unsigned int cpu, i;
 
 	for_each_cpu_andnot(cpu, cpu_present_mask, cpu_online_mask) {
 		md = per_cpu_ptr(&mwait_cpu_dead, cpu);
 
-		/* Does it sit in mwait_play_dead() ? */
-		if (READ_ONCE(md->status) != CPUDEAD_MWAIT_WAIT)
-			continue;
-
-		/* Wait up to 5ms */
-		for (i = 0; READ_ONCE(md->status) != newstate && i < 1000; i++) {
-			/* Bring it out of mwait */
-			WRITE_ONCE(md->control, newstate);
-			udelay(5);
+		switch (reason) {
+			case CPUDEAD_MWAIT_KEXEC_HLT:
+				/*
+				 * Kexec is about to happen. Don't go back into mwait() as
+				 * the kexec kernel might overwrite text and data including
+				 * page tables. So mwait() would resume when the monitor
+				 * cache line is written to and then the CPU goes south due
+				 * to overwritten text or page tables.
+				 */
+				for (i = 0; READ_ONCE(md->status) != reason && i < 1000; i++) {
+					/* Bring it out of mwait */
+					WRITE_ONCE(md->control, reason);
+					udelay(5);
+				}
+				break;
+			default:
+				pr_err_once("%s: Unknown control value 0x%x\n", __func__, reason);
+				return;
 		}
-
-		if (READ_ONCE(md->status) != newstate)
-			pr_err_once("CPU%u is stuck in mwait_play_dead()\n", cpu);
+		if (READ_ONCE(md->status) != reason)
+			pr_err_once("CPU%u is stuck in mwait_play_dead() control[0x%x] status [0x%x]\n",
+				cpu, md->control, md->status);
 	}
 }
 

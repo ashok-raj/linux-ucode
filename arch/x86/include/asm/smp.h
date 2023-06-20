@@ -132,7 +132,27 @@ void wbinvd_on_cpu(int cpu);
 int wbinvd_on_all_cpus(void);
 void cond_wakeup_cpu0(void);
 
-void smp_kick_mwait_play_dead(void);
+enum cpudead_mwait {
+	CPUDEAD_MWAIT_WAIT      = 0xDEADBEEF,
+	CPUDEAD_MWAIT_KEXEC_HLT = 0x4A17DEAD,
+};
+
+/**
+ * smp_kick_mwait_play_dead - Kick dead CPUs held in mwait_play_dead
+ * 			      temporarily before performing certain
+ * 			      operations.
+ * @reason:	The reason to kick out of mwait_play_dead().
+ *
+ * Temporarily kicks all ``OFFLINE`` CPUs before performing certain tasks.
+ *
+ * `reason`:
+ *
+ * ==========================   ============================================
+ * CPUDEAD_MWAIT_WAIT           Place all offline CPUs back in mwait
+ * CPUDEAD_MWAIT_KEXEC_HLT      Park all offline CPUs in native_halt()
+ * ==========================   ============================================
+ */
+void smp_kick_mwait_play_dead(enum cpudead_mwait reason);
 
 void native_smp_send_reschedule(int cpu);
 void native_send_call_func_ipi(const struct cpumask *mask);

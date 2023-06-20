@@ -754,3 +754,5 @@ Kernel Inline Documentations Reference
 ======================================
 
 .. kernel-doc:: include/linux/cpuhotplug.h
+
+.. kernel-doc:: arch/x86/include/asm/smp.h
