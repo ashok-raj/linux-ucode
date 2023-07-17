@@ -425,8 +425,14 @@ wait_for_siblings:
 	 * per-cpu cpuinfo can be updated with right microcode
 	 * revision.
 	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
+	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu && err != UCODE_ERROR) {
 		err = microcode_ops->apply_microcode(cpu);
+
+		if (err == UCODE_ERROR) {
+			pr_warn("Error reloading microcode on CPU %d\n", cpu);
+			ret = -1;
+		}
+	}
 
 	return ret;
 }
