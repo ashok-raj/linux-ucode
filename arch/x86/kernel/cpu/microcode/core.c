@@ -434,52 +434,23 @@ static void ucode_load_primary(unsigned int cpu)
 
 static int ucode_load_cpus_stopped(void *unused)
 {
-	int cpu = smp_processor_id();
-	enum ucode_state ret;
+	unsigned int cpu = smp_processor_id();
 
-	/*
-	 * Wait for all CPUs to arrive. A load will not be attempted unless all
-	 * CPUs show up.
-	 * */
-	if (!wait_for_cpus(&late_cpus_in)) {
-		this_cpu_write(ucode_ctrl.result, UCODE_TIMEOUT);
-		return 0;
+	if (topology_is_primary_thread(cpu))
+		ucode_load_primary(cpu);
+	else
+		ucode_load_secondary(cpu);
+
+	if (!wait_for_cpus(&late_cpus_out)) {
+		panic("Microcode load: %d secondary CPUs timed out\n",
+		      atomic_read(&late_cpus_out));
 	}
-
-	/*
-	 * On an SMT system, it suffices to load the microcode on one sibling of
-	 * the core because the microcode engine is shared between the threads.
-	 * Synchronization still needs to take place so that no concurrent
-	 * loading attempts happen on multiple threads of an SMT core. See
-	 * below.
-	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) != cpu)
-		goto wait_for_siblings;
-
-	ret = microcode_ops->apply_microcode(cpu);
-	this_cpu_write(ucode_ctrl.result, ret);
-
-wait_for_siblings:
-	if (!wait_for_cpus(&late_cpus_out))
-		panic("Timeout during microcode update!\n");
-
-	/*
-	 * At least one thread has completed update on each core.
-	 * For others, simply call the update to make sure the
-	 * per-cpu cpuinfo can be updated with right microcode
-	 * revision.
-	 */
-	if (cpumask_first(topology_sibling_cpumask(cpu)) == cpu)
-		return 0;
-
-	ret = microcode_ops->apply_microcode(cpu);
-	this_cpu_write(ucode_ctrl.result, ret);
 	return 0;
 }
 
 static int ucode_load_late_stop_cpus(void)
 {
-	unsigned int cpu, updated = 0, failed = 0, timedout = 0;
+	unsigned int cpu, updated = 0, failed = 0, timedout = 0, siblings = 0;
 	int old_rev = boot_cpu_data.microcode;
 	struct cpuinfo_x86 prev_info;
 
@@ -502,7 +473,7 @@ static int ucode_load_late_stop_cpus(void)
 		switch (per_cpu(ucode_ctrl.result, cpu)) {
 		case UCODE_UPDATED:	updated++; break;
 		case UCODE_TIMEOUT:	timedout++; break;
-		case UCODE_OK:		break;
+		case UCODE_OK:		siblings++; break;
 		default:		failed++; break;
 		}
 	}
@@ -517,15 +488,15 @@ static int ucode_load_late_stop_cpus(void)
 	}
 
 	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
-	pr_info("Microcode load: %u updated CPUs\n", updated);
+	pr_info("Microcode load: updated on %u primary CPUs with %u siblings\n", updated, siblings);
 	if (failed || timedout) {
 		pr_err("Microcode load incomplete. %u CPUs timed out or failed\n",
-		       num_online_cpus() - updated);
+		       num_online_cpus() - (updated + siblings));
 	}
 	pr_info("Microcode revision: 0x%x -> 0x%x\n", old_rev, boot_cpu_data.microcode);
 	microcode_check(&prev_info);
 
-	return updated == num_online_cpus() ? 0 : -EIO;
+	return updated + siblings == num_online_cpus() ? 0 : -EIO;
 }
 
 /*
