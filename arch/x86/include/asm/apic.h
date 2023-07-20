@@ -180,6 +180,7 @@ extern void lapic_offline(void);
 extern bool apic_needs_pit(void);
 
 extern void apic_send_IPI_allbutself(unsigned int vector);
+void apic_send_NMI_self(void);
 
 #else /* !CONFIG_X86_LOCAL_APIC */
 static inline void lapic_shutdown(void) { }

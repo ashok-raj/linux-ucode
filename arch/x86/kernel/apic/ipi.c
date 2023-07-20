@@ -57,6 +57,11 @@ void apic_send_IPI_allbutself(unsigned int vector)
 		apic->send_IPI_mask_allbutself(cpu_online_mask, vector);
 }
 
+void apic_send_NMI_self(void)
+{
+	apic->send_IPI_mask(cpumask_of(smp_processor_id()), NMI_VECTOR);
+}
+
 /*
  * Send a 'reschedule' IPI to another CPU. It goes straight through and
  * wastes no time serializing anything. Worst case is that we lose a
