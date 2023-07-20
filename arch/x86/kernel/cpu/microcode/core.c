@@ -350,39 +350,43 @@ struct ucode_ctrl {
 DEFINE_STATIC_KEY_FALSE(ucode_nmi_handler_enable);
 static DEFINE_PER_CPU(struct ucode_ctrl, ucode_ctrl);
 static atomic_t late_cpus_in, late_cpus_out;
+static unsigned int loops_per_usec;
 
-static bool wait_for_cpus(atomic_t *cnt)
+static noinstr bool wait_for_cpus(atomic_t *cnt)
 {
-	unsigned int timeout;
+	unsigned int timeout, loops;
 
-	WARN_ON_ONCE(atomic_dec_return(cnt) < 0);
+	WARN_ON_ONCE(raw_atomic_dec_return(cnt) < 0);
 
 	for (timeout = 0; timeout < USEC_PER_SEC; timeout++) {
-		if (!atomic_read(cnt))
+		if (!raw_atomic_read(cnt))
 			return true;
-		udelay(1);
+		for (loops = 0; loops < loops_per_usec; loops++)
+			cpu_relax();
 	}
 	/* Prevent the late comers to make progress and let them time out */
-	atomic_inc(cnt);
+	raw_atomic_inc(cnt);
 	return false;
 }
 
-static bool wait_for_ctrl(enum sibling_ctrl ctrl)
+static noinstr bool wait_for_ctrl(enum sibling_ctrl ctrl)
 {
-	unsigned int timeout;
+	unsigned int timeout, loops;
 
 	for (timeout = 0; timeout < USEC_PER_SEC; timeout++) {
-		if (this_cpu_read(ucode_ctrl.ctrl) != ctrl)
+		if (raw_cpu_read(ucode_ctrl.ctrl) != ctrl)
 			return true;
-		udelay(1);
+		for (loops = 0; loops < loops_per_usec; loops++)
+			cpu_relax();
 	}
 	return false;
 }
 
-static void ucode_load_secondary(unsigned int cpu)
+static noinstr void ucode_load_secondary(unsigned int cpu)
 {
-	unsigned int prcpu = cpumask_first(topology_sibling_cpumask(cpu));
 	enum ucode_state ret;
+	unsigned int prcpu;
+	bool released;
 
 	if (!wait_for_cpus(&late_cpus_in)) {
 		this_cpu_write(ucode_ctrl.result, UCODE_TIMEOUT);
@@ -390,7 +394,12 @@ static void ucode_load_secondary(unsigned int cpu)
 	}
 
 	/* Wait for primary threads to complete. */
-	if (!wait_for_ctrl(SCTRL_WAIT))
+	released = wait_for_ctrl(SCTRL_WAIT);
+
+	instrumentation_begin();
+
+	prcpu = cpumask_first(topology_sibling_cpumask(cpu));
+	if (!released)
 		panic("Microcode load: Primary CPU %d timed out\n", prcpu);
 
 	/*
@@ -404,6 +413,8 @@ static void ucode_load_secondary(unsigned int cpu)
 
 	this_cpu_write(ucode_ctrl.result, ret);
 	this_cpu_write(ucode_ctrl.ctrl, SCTRL_DONE);
+
+	instrumentation_end();
 }
 
 static void ucode_load_primary(unsigned int cpu)
@@ -471,6 +482,7 @@ static int ucode_load_late_stop_cpus(void)
 
 	atomic_set(&late_cpus_in, num_online_cpus());
 	atomic_set(&late_cpus_out, num_online_cpus());
+	loops_per_usec = loops_per_jiffy / (TICK_NSEC / 1000);
 
 	/*
 	 * Take a snapshot before the microcode update in order to compare and
