@@ -31,6 +31,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 
+#include <asm/apic.h>
 #include <asm/microcode_intel.h>
 #include <asm/cpu_device_id.h>
 #include <asm/microcode_amd.h>
@@ -343,8 +344,10 @@ enum sibling_ctrl {
 struct ucode_ctrl {
 	enum sibling_ctrl	ctrl;
 	enum ucode_state	result;
+	bool			nmi_enabled;
 };
 
+DEFINE_STATIC_KEY_FALSE(ucode_nmi_handler_enable);
 static DEFINE_PER_CPU(struct ucode_ctrl, ucode_ctrl);
 static atomic_t late_cpus_in, late_cpus_out;
 
@@ -358,8 +361,6 @@ static bool wait_for_cpus(atomic_t *cnt)
 		if (!atomic_read(cnt))
 			return true;
 		udelay(1);
-		if (!timeout % 1000)
-			touch_nmi_watchdog();
 	}
 	/* Prevent the late comers to make progress and let them time out */
 	atomic_inc(cnt);
@@ -374,8 +375,6 @@ static bool wait_for_ctrl(enum sibling_ctrl ctrl)
 		if (this_cpu_read(ucode_ctrl.ctrl) != ctrl)
 			return true;
 		udelay(1);
-		if (!timeout % 1000)
-			touch_nmi_watchdog();
 	}
 	return false;
 }
@@ -432,9 +431,14 @@ static void ucode_load_primary(unsigned int cpu)
 	}
 }
 
-static int ucode_load_cpus_stopped(void *unused)
+bool ucode_nmi_handler(void)
 {
 	unsigned int cpu = smp_processor_id();
+
+	if (!this_cpu_read(ucode_ctrl.nmi_enabled))
+		return false;
+
+	this_cpu_write(ucode_ctrl.nmi_enabled, false);
 
 	if (topology_is_primary_thread(cpu))
 		ucode_load_primary(cpu);
@@ -445,6 +449,14 @@ static int ucode_load_cpus_stopped(void *unused)
 		panic("Microcode load: %d secondary CPUs timed out\n",
 		      atomic_read(&late_cpus_out));
 	}
+	touch_nmi_watchdog();
+	return true;
+}
+
+static int ucode_load_cpus_stopped(void *unused)
+{
+	this_cpu_write(ucode_ctrl.nmi_enabled, true);
+	apic_send_NMI_self();
 	return 0;
 }
 
@@ -466,7 +478,11 @@ static int ucode_load_late_stop_cpus(void)
 	 */
 	store_cpu_caps(&prev_info);
 
+	static_branch_enable_cpuslocked(&ucode_nmi_handler_enable);
+
 	stop_machine_cpuslocked(ucode_load_cpus_stopped, NULL, cpu_online_mask);
+
+	static_branch_disable_cpuslocked(&ucode_nmi_handler_enable);
 
 	/* Analyze the results */
 	for_each_cpu_and(cpu, cpu_present_mask, &cpus_booted_once_mask) {
