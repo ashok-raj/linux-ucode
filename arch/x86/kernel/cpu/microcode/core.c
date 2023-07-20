@@ -336,23 +336,6 @@ static struct platform_device	*microcode_pdev;
  */
 #define SPINUNIT 100 /* 100 nsec */
 
-static int check_online_cpus(void)
-{
-	unsigned int cpu;
-
-	/*
-	 * Make sure all CPUs are online.  It's fine for SMT to be disabled if
-	 * all the primary threads are still online.
-	 */
-	for_each_present_cpu(cpu) {
-		if (topology_is_primary_thread(cpu) && !cpu_online(cpu)) {
-			pr_err("Not all CPUs online, aborting microcode update.\n");
-			return -EINVAL;
-		}
-	}
-
-	return 0;
-}
 
 static atomic_t late_cpus_in;
 static atomic_t late_cpus_out;
@@ -465,6 +448,28 @@ static int microcode_reload_late(void)
 	return ret;
 }
 
+/*
+ * Ensure that all CPUs which are present and have been booted once are
+ * online.
+ *
+ * To pass this check, all SMT threads must be online.  When SMT is
+ * disabled via kernel command line or sysfs the secondary threads are
+ * parked in play_cpu_dead() and sit in a MWAIT loop.  This loop is not
+ * compatible with late loading.
+ */
+static bool ensure_cpus_are_online(void)
+{
+	unsigned int cpu;
+
+	for_each_cpu_and(cpu, cpu_present_mask, &cpus_booted_once_mask) {
+		if (!cpu_online(cpu)) {
+			pr_err("CPU %u not online\n", cpu);
+			return false;
+		}
+	}
+	return true;
+}
+
 static ssize_t reload_store(struct device *dev,
 			    struct device_attribute *attr,
 			    const char *buf, size_t size)
@@ -480,9 +485,10 @@ static ssize_t reload_store(struct device *dev,
 
 	cpus_read_lock();
 
-	ret = check_online_cpus();
-	if (ret)
+	if (!ensure_cpus_are_online()) {
+		ret = -EBUSY;
 		goto put;
+	}
 
 	tmp_ret = microcode_ops->request_microcode_fw(bsp, &microcode_pdev->dev);
 	if (tmp_ret != UCODE_NEW)
