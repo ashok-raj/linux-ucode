@@ -366,6 +366,72 @@ static bool wait_for_cpus(atomic_t *cnt)
 	return false;
 }
 
+static bool wait_for_ctrl(enum sibling_ctrl ctrl)
+{
+	unsigned int timeout;
+
+	for (timeout = 0; timeout < USEC_PER_SEC; timeout++) {
+		if (this_cpu_read(ucode_ctrl.ctrl) != ctrl)
+			return true;
+		udelay(1);
+		if (!timeout % 1000)
+			touch_nmi_watchdog();
+	}
+	return false;
+}
+
+static void ucode_load_secondary(unsigned int cpu)
+{
+	unsigned int prcpu = cpumask_first(topology_sibling_cpumask(cpu));
+	enum ucode_state ret;
+
+	if (!wait_for_cpus(&late_cpus_in)) {
+		this_cpu_write(ucode_ctrl.result, UCODE_TIMEOUT);
+		return;
+	}
+
+	/* Wait for primary threads to complete. */
+	if (!wait_for_ctrl(SCTRL_WAIT))
+		panic("Microcode load: Primary CPU %d timed out\n", prcpu);
+
+	/*
+	 * If the primary succeeded apply the microcode, otherwise
+	 * copy the state from the primary thread.
+	 */
+	if (this_cpu_read(ucode_ctrl.ctrl) == SCTRL_APPLY)
+		ret = microcode_ops->apply_microcode(cpu);
+	else
+		ret = per_cpu(ucode_ctrl.result, cpu);
+
+	this_cpu_write(ucode_ctrl.result, ret);
+	this_cpu_write(ucode_ctrl.ctrl, SCTRL_DONE);
+}
+
+static void ucode_load_primary(unsigned int cpu)
+{
+	enum sibling_ctrl ctrl;
+	enum ucode_state ret;
+	unsigned int sibling;
+
+	if (!wait_for_cpus(&late_cpus_in)) {
+		this_cpu_write(ucode_ctrl.result, UCODE_TIMEOUT);
+		pr_err_once("Microcode load: %d CPUs timed out\n",
+			    atomic_read(&late_cpus_in) - 1);
+		return;
+	}
+
+	ret = microcode_ops->apply_microcode(cpu);
+	this_cpu_write(ucode_ctrl.result, ret);
+	this_cpu_write(ucode_ctrl.ctrl, SCTRL_DONE);
+
+	ctrl = ret == UCODE_UPDATED ? SCTRL_APPLY : SCTRL_DONE;
+	/* Release siblings */
+	for_each_cpu(sibling, topology_sibling_cpumask(cpu)) {
+		if (sibling != cpu)
+			per_cpu(ucode_ctrl.ctrl, sibling) = ctrl;
+	}
+}
+
 static int ucode_load_cpus_stopped(void *unused)
 {
 	int cpu = smp_processor_id();
