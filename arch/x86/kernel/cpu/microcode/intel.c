@@ -459,6 +459,9 @@ static enum ucode_state read_ucode_intel(int cpu, struct iov_iter *iter)
 	u8 *new_mc = NULL, *mc = NULL;
 	unsigned int csig, cpf;
 
+	if (force_minrev)
+		return UCODE_NFOUND;
+
 	while (iov_iter_count(iter)) {
 		struct microcode_header_intel mc_header;
 		unsigned int mc_size, data_size;
