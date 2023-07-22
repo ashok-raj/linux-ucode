@@ -20,7 +20,6 @@
 #include <asm/bugs.h>
 #include <asm/cpu.h>
 #include <asm/intel-family.h>
-#include <asm/microcode_intel.h>
 #include <asm/hwcap2.h>
 #include <asm/elf.h>
 #include <asm/cpu_device_id.h>
@@ -29,6 +28,8 @@
 #include <asm/resctrl.h>
 #include <asm/numa.h>
 #include <asm/thermal.h>
+
+#include "microcode/intel.h"
 
 #ifdef CONFIG_X86_64
 #include <linux/topology.h>

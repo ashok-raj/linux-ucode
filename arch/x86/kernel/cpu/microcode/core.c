@@ -31,14 +31,15 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 
-#include <asm/microcode_intel.h>
 #include <asm/cpu_device_id.h>
-#include <asm/microcode_amd.h>
 #include <asm/perf_event.h>
-#include <asm/microcode.h>
 #include <asm/processor.h>
 #include <asm/cmdline.h>
 #include <asm/setup.h>
+
+#include "amd.h"
+#include "intel.h"
+#include "local.h"
 
 #define DRIVER_VERSION	"2.2"
 
