@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_X86_MICROCODE_AMD_H
-#define _ASM_X86_MICROCODE_AMD_H
+#ifndef _X86_MICROCODE_AMD_H
+#define _X86_MICROCODE_AMD_H
 
 #include <asm/microcode.h>
 

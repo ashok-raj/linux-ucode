@@ -29,12 +29,13 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 
-#include <asm/microcode_amd.h>
-#include <asm/microcode.h>
 #include <asm/processor.h>
 #include <asm/setup.h>
 #include <asm/cpu.h>
 #include <asm/msr.h>
+
+#include "amd.h"
+#include "local.h"
 
 static struct equiv_cpu_table {
 	unsigned int num_entries;
