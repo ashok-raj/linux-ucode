@@ -301,6 +301,9 @@ struct apic {
 	enum apic_delivery_modes delivery_mode;
 	bool	dest_mode_logical;
 
+	/* Allows to send an NMI to an "offline" CPU which hangs in *play_dead() */
+	bool	nmi_to_offline_cpu;
+
 	u32	(*calc_dest_apicid)(unsigned int cpu);
 
 	/* ICR related functions */
@@ -504,6 +507,8 @@ extern bool default_check_apicid_used(physid_mask_t *map, int apicid);
 extern void default_ioapic_phys_id_map(physid_mask_t *phys_map, physid_mask_t *retmap);
 extern int default_cpu_present_to_apicid(int mps_cpu);
 extern int default_check_phys_apicid_present(int phys_apicid);
+
+void apic_send_nmi_to_offline_cpu(unsigned int cpu);
 
 #endif /* CONFIG_X86_LOCAL_APIC */
 
