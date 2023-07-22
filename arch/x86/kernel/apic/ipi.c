@@ -242,6 +242,15 @@ void default_send_IPI_self(int vector)
 	__default_send_IPI_shortcut(APIC_DEST_SELF, vector);
 }
 
+void apic_send_nmi_to_offline_cpu(unsigned int cpu)
+{
+	if (WARN_ON_ONCE(!apic->nmi_to_offline_cpu))
+		return;
+	if (WARN_ON_ONCE(!cpumask_test_cpu(cpu, &cpus_booted_once_mask)))
+		return;
+	apic->send_IPI(cpu, NMI_VECTOR);
+}
+
 #ifdef CONFIG_X86_32
 
 void default_send_IPI_mask_sequence_logical(const struct cpumask *mask,
