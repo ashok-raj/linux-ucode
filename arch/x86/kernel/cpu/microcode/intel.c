@@ -33,11 +33,14 @@
 #include "intel.h"
 #include "local.h"
 
+#define DEBUG
+
 static const char ucode_path[] = "kernel/x86/microcode/GenuineIntel.bin";
 
 /* Current microcode patch used in early patching on the APs. */
-static struct microcode_intel *intel_ucode_patch_pa __read_mostly;
-static struct microcode_intel *intel_ucode_patch_va __read_mostly;
+static struct microcode_intel *applied_ucode_va __read_mostly;
+static struct microcode_intel *applied_ucode_pa __read_mostly;
+static struct microcode_intel *unapplied_ucode __read_mostly;
 
 /* last level cache size per core */
 static int llc_size_per_core __read_mostly;
@@ -55,22 +58,32 @@ static int has_newer_microcode(void *mc, unsigned int csig, int cpf, int new_rev
 	return intel_find_matching_signature(mc, csig, cpf);
 }
 
+static void update_unapplied_ucode(struct microcode_intel *mc, unsigned int size)
+{
+	pr_err("Updating unapplied ucode with revision 0x%x\n", mc->hdr.rev);
+	unapplied_ucode = kmemdup(mc, size, GFP_KERNEL);
+	if (!unapplied_ucode) {
+		pr_err("Error allocating buffer for microcode\n");
+		return;
+	}
+}
+
 static void update_ucode_pointer(struct microcode_intel *mc)
 {
 	struct microcode_intel *prev_mc;
 
-        prev_mc = intel_ucode_patch_va;
-        intel_ucode_patch_va = mc;
+        prev_mc = applied_ucode_va;
+        applied_ucode_va = mc;
         /*
          * Save for early loading on APs. On 32-bit, that needs to be a
          * physical address as the APs are invoking the load from physical
          * addresses before paging has been enabled.
          */
         if (IS_ENABLED(CONFIG_X86_32))
-                intel_ucode_patch_pa = (struct microcode_intel *)__pa_nodebug(mc);
-
+                applied_ucode_pa = (struct microcode_intel *)__pa_nodebug(mc);
 
         kfree(prev_mc);
+	pr_err("Updated ucode ptr\n");
 }
 
 static void save_microcode_patch(void *data, unsigned int size)
@@ -327,7 +340,7 @@ static void __load_ucode_intel_ap(bool early)
 {
 	struct ucode_cpu_info uci;
 
-	uci.mc = IS_ENABLED(CONFIG_X86_32) ? intel_ucode_patch_pa : intel_ucode_patch_va;
+	uci.mc = IS_ENABLED(CONFIG_X86_32) ? applied_ucode_pa : applied_ucode_va;
 	if (uci.mc)
 		apply_microcode_early(&uci, early);
 }
@@ -339,7 +352,7 @@ void load_ucode_intel_ap(void)
 
 static struct microcode_intel *find_patch(void)
 {
-	return intel_ucode_patch_va;
+	return unapplied_ucode ? unapplied_ucode : applied_ucode_va;
 }
 
 void reload_ucode_intel(void)
@@ -505,19 +518,18 @@ static enum ucode_state generic_load_microcode(int cpu, struct iov_iter *iter)
 	if (!new_mc)
 		return UCODE_NFOUND;
 
+	pr_debug("CPU%d found a matching microcode update with version 0x%x (current=0x%x)\n",
+		 cpu, new_rev, uci->cpu_sig.rev);
 	/*
 	 * If early loading microcode is supported, save this mc into
 	 * permanent memory. So it will be loaded early when a CPU is hot added
 	 * or resumes.
 	 */
-	save_microcode_patch((struct microcode_intel *)new_mc, new_mc_size);
-	uci->mc = intel_ucode_patch_va;
+
+	update_unapplied_ucode((struct microcode_intel *)new_mc, new_mc_size);
 
 	vfree(mc);
 	vfree(new_mc);
-
-	pr_debug("CPU%d found a matching microcode update with version 0x%x (current=0x%x)\n",
-		 cpu, new_rev, uci->cpu_sig.rev);
 
 	return ret;
 }
@@ -575,10 +587,27 @@ static enum ucode_state request_microcode_fw(int cpu, struct device *device)
 	return ret;
 }
 
+static void finalize_late_load(int result)
+{
+	pr_err("finalize with result %d\n", result);
+
+	if (result) {
+		if (unapplied_ucode)
+			kfree(unapplied_ucode);
+		pr_err("update failed freed unapplied\n");
+	}
+	else
+		update_ucode_pointer(unapplied_ucode);
+
+
+	unapplied_ucode = NULL;
+}
+
 static struct microcode_ops microcode_intel_ops = {
 	.request_microcode_fw             = request_microcode_fw,
 	.collect_cpu_info                 = collect_cpu_info,
 	.apply_microcode                  = apply_microcode_intel,
+	.finalize_late_load		  = finalize_late_load,
 };
 
 static int __init calc_llc_size_per_core(struct cpuinfo_x86 *c)
