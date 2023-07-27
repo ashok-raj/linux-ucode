@@ -746,7 +746,12 @@ static int ucode_load_late_locked(void)
 	default:
 		return -EBADFD;
 	}
-	return ucode_load_late_stop_cpus(ret == UCODE_NEW_SAFE);
+	ret = ucode_load_late_stop_cpus(ret == UCODE_NEW_SAFE);
+
+	if (microcode_ops->finalize_late_load)
+		microcode_ops->finalize_late_load(ret);
+
+	return ret;
 }
 
 static ssize_t reload_store(struct device *dev,
