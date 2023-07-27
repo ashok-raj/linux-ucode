@@ -53,8 +53,6 @@ module_param(force_minrev, bool, S_IRUSR | S_IWUSR);
 
 bool initrd_gone;
 
-LIST_HEAD(microcode_cache);
-
 /*
  * Synchronization.
  *
