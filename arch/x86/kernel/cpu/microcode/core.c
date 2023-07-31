@@ -33,10 +33,11 @@
 
 #include <asm/cpu_device_id.h>
 #include <asm/perf_event.h>
-#include <asm/microcode.h>
 #include <asm/processor.h>
 #include <asm/cmdline.h>
 #include <asm/setup.h>
+
+#include "internal.h"
 
 #define DRIVER_VERSION	"2.2"
 
@@ -296,7 +297,7 @@ struct cpio_data find_microcode_in_initrd(const char *path, bool use_pa)
 #endif
 }
 
-void reload_early_microcode(unsigned int cpu)
+static void reload_early_microcode(unsigned int cpu)
 {
 	int vendor, family;
 
