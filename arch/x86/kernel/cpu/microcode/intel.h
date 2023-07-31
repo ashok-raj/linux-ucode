@@ -48,7 +48,6 @@ static inline u32 intel_get_microcode_revision(void)
 #ifdef CONFIG_MICROCODE_INTEL
 extern void __init load_ucode_intel_bsp(void);
 extern void load_ucode_intel_ap(void);
-extern int __init save_microcode_in_initrd_intel(void);
 void reload_ucode_intel(void);
 #else
 static inline __init void load_ucode_intel_bsp(void) {}
