@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_X86_MICROCODE_AMD_H
-#define _ASM_X86_MICROCODE_AMD_H
+#ifndef _X86_MICROCODE_AMD_H
+#define _X86_MICROCODE_AMD_H
 
 #define UCODE_MAGIC			0x00414d44
 #define UCODE_EQUIV_CPU_TABLE_TYPE	0x00000000
@@ -15,7 +15,7 @@ struct equiv_cpu_entry {
 	u32	fixed_errata_compare;
 	u16	equiv_cpu;
 	u16	res;
-} __attribute__((packed));
+} __packed;
 
 struct microcode_header_amd {
 	u32	data_code;
@@ -32,7 +32,7 @@ struct microcode_header_amd {
 	u8	bios_api_rev;
 	u8	reserved1[3];
 	u32	match_reg[8];
-} __attribute__((packed));
+} __packed;
 
 struct microcode_amd {
 	struct microcode_header_amd	hdr;
@@ -42,14 +42,16 @@ struct microcode_amd {
 #define PATCH_MAX_SIZE (3 * PAGE_SIZE)
 
 #ifdef CONFIG_MICROCODE_AMD
+extern void __init load_ucode_amd_bsp(unsigned int family);
+extern void load_ucode_amd_ap(unsigned int family);
 extern void load_ucode_amd_early(unsigned int cpuid_1_eax);
 extern int __init save_microcode_in_initrd_amd(unsigned int family);
 void reload_ucode_amd(unsigned int cpu);
 #else
-static inline void load_ucode_amd_early(unsigned int cpuid_1_eax) {}
-static inline int __init
-save_microcode_in_initrd_amd(unsigned int family) { return -EINVAL; }
+static inline void __init load_ucode_amd_bsp(unsigned int family) {}
+static inline void load_ucode_amd_ap(unsigned int family) {}
+static inline void load_ucode_amd_early(unsigned int family) {}
+static inline int __init save_microcode_in_initrd_amd(unsigned int family) { return -EINVAL; }
 static inline void reload_ucode_amd(unsigned int cpu) {}
 #endif
-
-#endif /* _ASM_X86_MICROCODE_AMD_H */
+#endif /* _X86_MICROCODE_AMD_H */
