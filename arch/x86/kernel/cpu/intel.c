@@ -41,6 +41,8 @@
 #include <asm/apic.h>
 #endif
 
+#include "microcode/intel.h"
+
 enum split_lock_detect_state {
 	sld_off = 0,
 	sld_warn,
