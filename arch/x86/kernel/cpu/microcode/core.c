@@ -46,6 +46,9 @@
 static struct microcode_ops	*microcode_ops;
 static bool dis_ucode_ldr = true;
 
+bool force_minrev = IS_ENABLED(CONFIG_MICROCODE_LATE_FORCE_MINREV);
+module_param(force_minrev, bool, S_IRUSR | S_IWUSR);
+
 bool initrd_gone;
 
 /*
@@ -600,15 +603,17 @@ static int ucode_load_cpus_stopped(void *unused)
 	return 0;
 }
 
-static int ucode_load_late_stop_cpus(void)
+static int ucode_load_late_stop_cpus(bool is_safe)
 {
 	unsigned int cpu, updated = 0, failed = 0, timedout = 0, siblings = 0;
 	unsigned int nr_offl, offline = 0;
 	int old_rev = boot_cpu_data.microcode;
 	struct cpuinfo_x86 prev_info;
 
-	pr_err("Attempting late microcode loading - it is dangerous and taints the kernel.\n");
-	pr_err("You should switch to early loading, if possible.\n");
+	if (!is_safe) {
+		pr_err("Late microcode loading without minimal revision check.\n");
+		pr_err("You should switch to early loading, if possible.\n");
+	}
 
 	atomic_set(&late_cpus_in, num_online_cpus());
 	atomic_set(&offline_in_nmi, 0);
@@ -658,7 +663,9 @@ static int ucode_load_late_stop_cpus(void)
 		return -EIO;
 	}
 
-	add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+	if (!is_safe || failed || timedout)
+		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
+
 	pr_info("Microcode load: updated on %u primary CPUs with %u siblings\n", updated, siblings);
 	if (failed || timedout) {
 		pr_err("Microcode load incomplete. %u CPUs timed out or failed\n",
@@ -752,9 +759,17 @@ static int ucode_load_late_locked(void)
 		return -EBUSY;
 
 	ret = microcode_ops->request_microcode_fw(0, &microcode_pdev->dev);
-	if (ret != UCODE_NEW)
-		return ret == UCODE_NFOUND ? -ENOENT : -EBADFD;
-	return ucode_load_late_stop_cpus();
+
+	switch (ret) {
+	case UCODE_NEW:
+	case UCODE_NEW_SAFE:
+		break;
+	case UCODE_NFOUND:
+		return -ENOENT;
+	default:
+		return -EBADFD;
+	}
+	return ucode_load_late_stop_cpus(ret == UCODE_NEW_SAFE);
 }
 
 static ssize_t reload_store(struct device *dev,
