@@ -26,7 +26,7 @@ struct microcode_intel {
 #define MC_HEADER_TYPE_MICROCODE	1
 #define MC_HEADER_TYPE_IFS		2
 
-static inline int get_datasize(void *mc)
+static inline int intel_microcode_get_datasize(void *mc)
 {
 	struct microcode_intel *intel_mc = (struct microcode_intel *)mc;
 
