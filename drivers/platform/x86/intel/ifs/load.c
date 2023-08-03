@@ -60,7 +60,7 @@ static struct metadata_header *find_meta_data(void *ucode, unsigned int meta_typ
 	unsigned long data_size, total_meta;
 	unsigned long meta_size = 0;
 
-	data_size = get_datasize(ucode);
+	data_size = intel_microcode_get_datasize(ucode);
 	total_meta = ((struct microcode_intel *)ucode)->hdr.metasize;
 	if (!total_meta)
 		return NULL;

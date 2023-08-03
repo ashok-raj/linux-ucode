@@ -238,7 +238,7 @@ static void show_saved_mc(void)
 		date	= mc_saved_header->date;
 
 		total_size	= get_totalsize(mc_saved_header);
-		data_size	= get_datasize(mc_saved_header);
+		data_size	= intel_microcode_get_datasize(mc_saved_header);
 
 		pr_debug("mc_saved[%d]: sig=0x%x, pf=0x%x, rev=0x%x, total size=0x%x, date = %04x-%02x-%02x\n",
 			 i++, sig, pf, rev, total_size,
