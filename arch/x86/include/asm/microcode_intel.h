@@ -48,9 +48,12 @@ struct extended_sigtable {
 	 ((struct microcode_intel *)mc)->hdr.totalsize : \
 	 DEFAULT_UCODE_TOTALSIZE)
 
-#define get_datasize(mc) \
-	(((struct microcode_intel *)mc)->hdr.datasize ? \
-	 ((struct microcode_intel *)mc)->hdr.datasize : DEFAULT_UCODE_DATASIZE)
+static inline int intel_microcode_get_datasize(void *data)
+{
+	struct microcode_intel *mc = data;
+
+	return mc->hdr.datasize ? : DEFAULT_UCODE_DATASIZE;
+}
 
 #define exttable_size(et) ((et)->count * EXT_SIGNATURE_SIZE + EXT_HEADER_SIZE)
 
