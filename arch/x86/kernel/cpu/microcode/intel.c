@@ -38,37 +38,6 @@ static struct microcode_intel *ucode_patch_late __read_mostly;
 /* last level cache size per core */
 static unsigned int llc_size_per_core __ro_after_init;
 
-int intel_cpu_collect_info(struct ucode_cpu_info *uci)
-{
-	unsigned int val[2];
-	unsigned int family, model;
-	struct cpu_signature csig = { 0 };
-	unsigned int eax, ebx, ecx, edx;
-
-	memset(uci, 0, sizeof(*uci));
-
-	eax = 0x00000001;
-	ecx = 0;
-	native_cpuid(&eax, &ebx, &ecx, &edx);
-	csig.sig = eax;
-
-	family = x86_family(eax);
-	model  = x86_model(eax);
-
-	if (model >= 5 || family > 6) {
-		/* get processor flags from MSR 0x17 */
-		native_rdmsr(MSR_IA32_PLATFORM_ID, val[0], val[1]);
-		csig.pf = 1 << ((val[1] >> 18) & 7);
-	}
-
-	csig.rev = intel_get_microcode_revision();
-
-	uci->cpu_sig = csig;
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(intel_cpu_collect_info);
-
 /*
  * Returns 1 if update has been found, 0 otherwise.
  */
@@ -493,23 +462,33 @@ void reload_ucode_intel(void)
 
 static int collect_cpu_info(int cpu_num, struct cpu_signature *csig)
 {
-	struct cpuinfo_x86 *c = &cpu_data(cpu_num);
 	unsigned int val[2];
 
 	memset(csig, 0, sizeof(*csig));
 
 	csig->sig = cpuid_eax(0x00000001);
 
-	if ((c->x86_model >= 5) || (c->x86 > 6)) {
+	if ((x86_model(csig->sig) >= 5) || (x86_family(csig->sig) > 6)) {
 		/* get processor flags from MSR 0x17 */
 		rdmsr(MSR_IA32_PLATFORM_ID, val[0], val[1]);
 		csig->pf = 1 << ((val[1] >> 18) & 7);
 	}
 
-	csig->rev = c->microcode;
+	csig->rev = intel_get_microcode_revision();
 
 	return 0;
 }
+
+int intel_cpu_collect_info(struct ucode_cpu_info *uci)
+{
+	int cpu = smp_processor_id();
+
+	collect_cpu_info(cpu, &uci->cpu_sig);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(intel_cpu_collect_info);
+
 
 static enum ucode_state apply_microcode_late(int cpu)
 {
